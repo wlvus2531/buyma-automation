@@ -10,6 +10,8 @@ import {
   ShoppingCart,
   Image as ImageIcon,
   RefreshCw,
+  BarChart2,
+  UserCheck,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -19,6 +21,8 @@ const navItems = [
   { href: "/sourcing", label: "소싱 리스트", icon: List },
   { href: "/calculator", label: "마진 계산기", icon: Calculator },
   { href: "/orders", label: "주문 관리", icon: ShoppingCart },
+  { href: "/analytics", label: "판매 분석", icon: BarChart2 },
+  { href: "/seller", label: "셀러 관리", icon: UserCheck },
   { href: "/thumbnail", label: "썸네일 생성", icon: ImageIcon },
   { href: "/sync", label: "구글시트 동기화", icon: RefreshCw },
 ];

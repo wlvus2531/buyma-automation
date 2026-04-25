@@ -80,3 +80,35 @@ export interface SheetsSyncStatus {
   orders: "idle" | "syncing" | "success" | "error";
   error: string | null;
 }
+
+export type ListingStatus = "심사중" | "승인" | "거절" | "수정요청";
+
+export interface ListingReview {
+  id: string;
+  productName: string;
+  brand: string;
+  submittedDate: string;
+  status: ListingStatus;
+  notes: string;
+}
+
+export interface SellerRating {
+  totalRatings: number;
+  averageScore: number;
+  fiveStar: number;
+  fourStar: number;
+  threeStar: number;
+  below: number;
+  orderCount: number;
+  targetGrade: "powerShopper" | "premiumPower";
+}
+
+export interface WishlistEntry {
+  wishlistCount: number;
+  inquiryCount: number;
+}
+
+export interface VipNote {
+  isVip: boolean;
+  note: string;
+}

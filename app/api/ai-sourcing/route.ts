@@ -41,10 +41,12 @@ export async function POST(req: NextRequest) {
 
 추천 기준:
 - 한류 트렌드: 최근 인기 K-드라마/K-팝 관련 뷰티, 패션 아이템
+- K-아이돌 착용 브랜드 (2026 인기): Thug Club(방탄·SKZ), SCULPTOR(아이브·여자아이들), Matin Kim(블랙핑크·뉴진스), LUV IS TRUE(세븐틴·TXT), THEAIRTOWN(르세라핌·IVE), ADLV(전 아이돌), COVERNAT(RM)
 - 시즌 트렌드: ${month}월 계절에 맞는 상품 (${season} 아이템)
 - 파생 상품: 바이마에서 이미 잘 팔리는 카테고리의 관련/보완 상품
 - 경쟁이 낮고 마진이 높은 틈새 상품 우선
-- 일본에서 구하기 어렵거나 한국 특산 브랜드 선호`;
+- 일본에서 구하기 어렵거나 한국 특산 브랜드 선호
+- 바이마 일본 구매자들이 한국 셀러에게 구매하는 이유: 정품 보장, 한국 현지가, 빠른 배송`;
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
