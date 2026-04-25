@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, RefreshCw, Search, Pencil, ChevronRight } from "lucide-react";
+import { Plus, RefreshCw, Search, Pencil, ChevronRight, Upload } from "lucide-react";
 import type { Order, OrderStatus } from "@/lib/types";
 import { formatJpy, formatKrw, statusBadgeClass, marginBg, formatPercent, generateId, calcMargin } from "@/lib/utils";
 import OrderModal from "@/components/orders/OrderModal";
+import CsvUploadModal from "@/components/orders/CsvUploadModal";
 
 const STATUSES: OrderStatus[] = ["주문접수", "발주완료", "배송중", "배송완료", "정산완료"];
 const STATUS_NEXT: Record<OrderStatus, OrderStatus | null> = {
@@ -21,6 +22,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "전체">("전체");
   const [showModal, setShowModal] = useState(false);
+  const [showCsvModal, setShowCsvModal] = useState(false);
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -120,6 +122,9 @@ export default function OrdersPage() {
         <div className="flex gap-2">
           <button onClick={load} className="btn-secondary flex items-center gap-2">
             <RefreshCw size={15} /> 새로고침
+          </button>
+          <button onClick={() => setShowCsvModal(true)} className="btn-secondary flex items-center gap-2">
+            <Upload size={15} /> CSV 가져오기
           </button>
           <button onClick={() => { setEditOrder(null); setShowModal(true); }} className="btn-primary flex items-center gap-2">
             <Plus size={15} /> 주문 추가
@@ -230,6 +235,17 @@ export default function OrdersPage() {
           onClose={() => { setShowModal(false); setEditOrder(null); }}
           onSave={handleSave}
           saving={saving}
+        />
+      )}
+
+      {showCsvModal && (
+        <CsvUploadModal
+          existingOrders={orders}
+          onClose={() => setShowCsvModal(false)}
+          onDone={(added) => {
+            setShowCsvModal(false);
+            if (added > 0) load();
+          }}
         />
       )}
     </div>
