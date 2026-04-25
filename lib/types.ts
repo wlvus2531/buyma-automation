@@ -37,6 +37,8 @@ export interface Order {
   marginJpy: number;
   marginRate: number;           // %
   notes: string;
+  shippingAddress: string;      // 일본 배송지 주소 (조광 발주용)
+  phone: string;                // 수취인 연락처
 }
 
 export interface MarginCalcInput {

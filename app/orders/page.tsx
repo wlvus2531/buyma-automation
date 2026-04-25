@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, RefreshCw, Search, Pencil, ChevronRight, Upload } from "lucide-react";
+import { Plus, RefreshCw, Search, Pencil, ChevronRight, Upload, Truck } from "lucide-react";
 import type { Order, OrderStatus } from "@/lib/types";
 import { formatJpy, formatKrw, statusBadgeClass, marginBg, formatPercent, generateId, calcMargin } from "@/lib/utils";
 import OrderModal from "@/components/orders/OrderModal";
 import CsvUploadModal from "@/components/orders/CsvUploadModal";
+import JokwangModal from "@/components/orders/JokwangModal";
 
 const STATUSES: OrderStatus[] = ["주문접수", "발주완료", "배송중", "배송완료", "정산완료"];
 const STATUS_NEXT: Record<OrderStatus, OrderStatus | null> = {
@@ -25,6 +26,9 @@ export default function OrdersPage() {
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [editOrder, setEditOrder] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showJokwang, setShowJokwang] = useState(false);
+  const [jokwangOrder, setJokwangOrder] = useState<Order | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -72,6 +76,8 @@ export default function OrdersPage() {
       marginJpy: parseFloat(calc.profitWithRefund.toFixed(0)),
       marginRate: parseFloat(calc.marginWithRefund.toFixed(2)),
       notes: order.notes ?? "",
+      shippingAddress: order.shippingAddress ?? "",
+      phone: order.phone ?? "",
     };
     await fetch("/api/sheets/orders", {
       method: "POST",
@@ -100,6 +106,26 @@ export default function OrdersPage() {
       body: JSON.stringify(updated),
     });
     await load();
+  }
+
+  async function handleJokwangComplete(updates: { shippingAddress: string; phone: string }) {
+    if (!jokwangOrder) return;
+    setCompleting(true);
+    const updated: Order = {
+      ...jokwangOrder,
+      status: "발주완료",
+      shippingAddress: updates.shippingAddress,
+      phone: updates.phone,
+    };
+    await fetch("/api/sheets/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    await load();
+    setShowJokwang(false);
+    setJokwangOrder(null);
+    setCompleting(false);
   }
 
   const counts = STATUSES.reduce((acc, s) => {
@@ -203,8 +229,17 @@ export default function OrdersPage() {
                     <td className="px-4 py-3 text-xs text-gray-500">{order.orderDate}</td>
                     <td className="px-4 py-3 text-xs font-mono text-gray-500">{order.trackingNumber || "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {STATUS_NEXT[order.status] && (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {order.status === "주문접수" && (
+                          <button
+                            onClick={() => { setJokwangOrder(order); setShowJokwang(true); }}
+                            className="flex items-center gap-1 px-2 py-1 bg-orange-50 text-orange-700 rounded-lg text-xs hover:bg-orange-100 transition-colors whitespace-nowrap font-medium border border-orange-200"
+                            title="조광 인터내셔널 발주 준비"
+                          >
+                            <Truck size={12} /> 발주 준비
+                          </button>
+                        )}
+                        {STATUS_NEXT[order.status] && order.status !== "주문접수" && (
                           <button
                             onClick={() => handleAdvanceStatus(order)}
                             className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs hover:bg-indigo-100 transition-colors whitespace-nowrap"
@@ -246,6 +281,15 @@ export default function OrdersPage() {
             setShowCsvModal(false);
             if (added > 0) load();
           }}
+        />
+      )}
+
+      {showJokwang && jokwangOrder && (
+        <JokwangModal
+          order={jokwangOrder}
+          onClose={() => { setShowJokwang(false); setJokwangOrder(null); }}
+          onComplete={handleJokwangComplete}
+          completing={completing}
         />
       )}
     </div>

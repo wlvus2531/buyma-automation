@@ -22,6 +22,7 @@ export default function OrderModal({ order, onClose, onSave, saving }: Props) {
     exchangeRate: 10.5, status: "주문접수",
     trackingNumber: "", orderDate: today,
     shippedDate: "", settledDate: "", notes: "",
+    shippingAddress: "", phone: "",
   });
 
   useEffect(() => {
@@ -74,6 +75,14 @@ export default function OrderModal({ order, onClose, onSave, saving }: Props) {
               <select className="input" value={form.status ?? "주문접수"} onChange={(e) => update("status", e.target.value as OrderStatus)}>
                 {STATUSES.map((s) => <option key={s}>{s}</option>)}
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className="label">일본 배송지 주소 <span className="text-gray-400 font-normal">(조광 발주용)</span></label>
+              <input className="input" value={form.shippingAddress ?? ""} onChange={(e) => update("shippingAddress", e.target.value)} placeholder="수취인 일본 주소" />
+            </div>
+            <div>
+              <label className="label">수취인 연락처 <span className="text-gray-400 font-normal">(조광 발주용)</span></label>
+              <input className="input" value={form.phone ?? ""} onChange={(e) => update("phone", e.target.value)} placeholder="수취인 전화번호" />
             </div>
           </div>
 

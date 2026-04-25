@@ -146,9 +146,11 @@ export function parseBuymaCSV(csvText: string): CsvParseResult {
       orderDate:     idx.orderDate >= 0     ? parseDate(row[idx.orderDate]) : "",
       shippedDate:   "",
       settledDate:   "",
-      marginJpy:     Math.round(calc.profitWithRefund),
-      marginRate:    parseFloat(calc.marginWithRefund.toFixed(2)),
-      notes:         "",
+      marginJpy:      Math.round(calc.profitWithRefund),
+      marginRate:     parseFloat(calc.marginWithRefund.toFixed(2)),
+      notes:          "",
+      shippingAddress: "",
+      phone:          "",
     });
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { TrendingUp, ShoppingCart, Package, BarChart3, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
+import { TrendingUp, ShoppingCart, Package, BarChart3, ArrowRight, Sparkles, AlertCircle, Truck } from "lucide-react";
 import type { SourcingItem, Order } from "@/lib/types";
 import { formatKrw, formatJpy, statusBadgeClass } from "@/lib/utils";
 
@@ -38,6 +38,7 @@ export default function Dashboard() {
 
   const recentOrders = orders.slice(0, 5);
   const lowMarginItems = sourcing.filter((s) => s.marginWithRefund < 10 && s.status === "판매중");
+  const waitingDispatch = orders.filter((o) => o.status === "주문접수");
 
   return (
     <div className="space-y-6">
@@ -134,6 +135,46 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* 발주 대기 중 */}
+      {!loading && waitingDispatch.length > 0 && (
+        <div className="card border-l-4 border-l-orange-400">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Truck size={16} className="text-orange-500" />
+              발주 대기 중
+              <span className="ml-1 bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                {waitingDispatch.length}건
+              </span>
+            </h2>
+            <Link href="/orders" className="text-sm text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+              발주 처리하기 <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {waitingDispatch.slice(0, 5).map((order) => (
+              <div key={order.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 truncate max-w-[200px]">{order.productName}</p>
+                  <p className="text-xs text-gray-400">{order.orderDate} · {order.buyerName}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-900">{formatJpy(order.sellingPrice)}</span>
+                  <Link
+                    href="/orders"
+                    className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full hover:bg-orange-200 transition-colors flex items-center gap-0.5"
+                  >
+                    <Truck size={10} /> 발주 준비
+                  </Link>
+                </div>
+              </div>
+            ))}
+            {waitingDispatch.length > 5 && (
+              <p className="text-xs text-gray-400 text-center pt-1">외 {waitingDispatch.length - 5}건 더 있음</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 빠른 링크 */}
       <div className="card">

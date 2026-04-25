@@ -164,6 +164,8 @@ export async function getOrders(): Promise<Order[]> {
     marginJpy: Number(r[13]) || 0,
     marginRate: Number(r[14]) || 0,
     notes: r[15] ?? "",
+    shippingAddress: r[16] ?? "",
+    phone: r[17] ?? "",
   }));
 }
 
