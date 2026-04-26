@@ -16,6 +16,7 @@ export interface SourcingItem {
   exchangeRate: number;         // KRW per 1 JPY
   notes: string;
   createdAt: string;
+  sourceUrl: string;            // 구매처 URL (무신사/29cm/EQL 등)
 }
 
 export type OrderStatus = "주문접수" | "발주완료" | "배송중" | "배송완료" | "정산완료";

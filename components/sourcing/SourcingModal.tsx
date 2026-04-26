@@ -19,7 +19,7 @@ export default function SourcingModal({ item, onClose, onSave, saving }: Props) 
   const [form, setForm] = useState<Partial<SourcingItem>>({
     productName: "", category: "패션/의류", brand: "", koreaPurchasePrice: 0,
     buymaLowestPrice: 0, sellingPrice: 0, competitorCount: 0, status: "조사중",
-    shippingCost: 3000, exchangeRate: 10, notes: "",
+    shippingCost: 3000, exchangeRate: 10, notes: "", sourceUrl: "",
   });
 
   useEffect(() => {
@@ -121,6 +121,17 @@ export default function SourcingModal({ item, onClose, onSave, saving }: Props) 
               <label className="label">메모</label>
               <input className="input" value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} placeholder="메모 (선택)" />
             </div>
+          </div>
+
+          <div>
+            <label className="label">구매처 URL (무신사 / 29cm / EQL 등)</label>
+            <input
+              className="input"
+              value={form.sourceUrl ?? ""}
+              onChange={(e) => update("sourceUrl", e.target.value)}
+              placeholder="https://www.musinsa.com/products/12345"
+            />
+            <p className="text-xs text-gray-400 mt-1">입력 시 소싱 리스트에서 상품 이미지 자동 표시</p>
           </div>
         </div>
 

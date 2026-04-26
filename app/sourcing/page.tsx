@@ -1,10 +1,91 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Plus, RefreshCw, Search, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, RefreshCw, Search, Pencil, Trash2, ShoppingBag, Image as ImageIcon } from "lucide-react";
 import type { SourcingItem, SourcingStatus } from "@/lib/types";
 import { formatKrw, formatJpy, formatPercent, statusBadgeClass, marginBg, generateId, calcMargin } from "@/lib/utils";
 import SourcingModal from "@/components/sourcing/SourcingModal";
+import BuymaListingModal from "@/components/sourcing/BuymaListingModal";
+import ImageViewerModal from "@/components/sourcing/ImageViewerModal";
+
+// ─── 썸네일 셀 (행별 이미지 자동 로드) ──────────────────────────────────────
+
+const imageCache = new Map<string, string | null>();
+
+function ThumbnailCell({ sourceUrl, onClick }: { sourceUrl: string; onClick: () => void }) {
+  const [imgUrl, setImgUrl] = useState<string | null | "loading">(() => {
+    if (!sourceUrl) return null;
+    return imageCache.has(sourceUrl) ? (imageCache.get(sourceUrl) ?? null) : "loading";
+  });
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    if (!sourceUrl || imageCache.has(sourceUrl)) return;
+
+    fetch("/api/fetch-product-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: sourceUrl }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const url = data.mainImage ?? null;
+        imageCache.set(sourceUrl, url);
+        if (mounted.current) setImgUrl(url);
+      })
+      .catch(() => {
+        imageCache.set(sourceUrl, null);
+        if (mounted.current) setImgUrl(null);
+      });
+
+    return () => { mounted.current = false; };
+  }, [sourceUrl]);
+
+  if (!sourceUrl) {
+    return (
+      <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+        <ImageIcon size={13} className="text-gray-300" />
+      </div>
+    );
+  }
+
+  if (imgUrl === "loading") {
+    return (
+      <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+        <RefreshCw size={12} className="text-gray-300 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!imgUrl) {
+    return (
+      <button
+        onClick={onClick}
+        title="이미지 없음 · 클릭하여 재시도"
+        className="w-10 h-10 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
+      >
+        <ImageIcon size={13} className="text-gray-400" />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      title="이미지 보기"
+      className="w-10 h-10 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-indigo-400 transition-colors shrink-0"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/proxy-image?url=${encodeURIComponent(imgUrl)}`}
+        alt=""
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    </button>
+  );
+}
 
 const STATUSES: SourcingStatus[] = ["조사중", "등록완료", "판매중", "일시정지", "중단"];
 
@@ -16,6 +97,8 @@ export default function SourcingPage() {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<SourcingItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [listingItem, setListingItem] = useState<SourcingItem | null>(null);
+  const [imageViewerItem, setImageViewerItem] = useState<SourcingItem | null>(null);
 
   async function load() {
     setLoading(true);
@@ -61,6 +144,7 @@ export default function SourcingPage() {
       exchangeRate: item.exchangeRate ?? 10,
       notes: item.notes ?? "",
       createdAt: editItem?.createdAt ?? now,
+      sourceUrl: item.sourceUrl ?? "",
     };
 
     await fetch("/api/sheets/sourcing", {
@@ -165,8 +249,16 @@ export default function SourcingPage() {
                 filtered.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900 max-w-[180px] truncate">{item.productName}</p>
-                      {item.notes && <p className="text-xs text-gray-400 truncate max-w-[180px]">{item.notes}</p>}
+                      <div className="flex items-center gap-2.5">
+                        <ThumbnailCell
+                          sourceUrl={item.sourceUrl ?? ""}
+                          onClick={() => setImageViewerItem(item)}
+                        />
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 max-w-[150px] truncate">{item.productName}</p>
+                          {item.notes && <p className="text-xs text-gray-400 truncate max-w-[150px]">{item.notes}</p>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-gray-700">{item.category}</p>
@@ -202,6 +294,20 @@ export default function SourcingPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
+                          onClick={() => setImageViewerItem(item)}
+                          title="이미지 · 원스톱 등록"
+                          className="p-1.5 hover:bg-blue-50 rounded-lg transition-colors text-gray-400 hover:text-blue-500"
+                        >
+                          <ImageIcon size={14} />
+                        </button>
+                        <button
+                          onClick={() => setListingItem(item)}
+                          title="바이마 등록 준비"
+                          className="p-1.5 hover:bg-indigo-50 rounded-lg transition-colors text-gray-400 hover:text-indigo-600"
+                        >
+                          <ShoppingBag size={14} />
+                        </button>
+                        <button
                           onClick={() => { setEditItem(item); setShowModal(true); }}
                           className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600"
                         >
@@ -229,6 +335,24 @@ export default function SourcingPage() {
           onClose={() => { setShowModal(false); setEditItem(null); }}
           onSave={handleSave}
           saving={saving}
+        />
+      )}
+
+      {listingItem && (
+        <BuymaListingModal
+          item={listingItem}
+          onClose={() => setListingItem(null)}
+        />
+      )}
+
+      {imageViewerItem && (
+        <ImageViewerModal
+          item={imageViewerItem}
+          onClose={() => setImageViewerItem(null)}
+          onBuymaListing={() => {
+            setListingItem(imageViewerItem);
+            setImageViewerItem(null);
+          }}
         />
       )}
     </div>

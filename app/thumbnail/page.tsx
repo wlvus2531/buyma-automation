@@ -25,6 +25,39 @@ export default function ThumbnailPage() {
   const [imagePos, setImagePos] = useState({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [autoLoadStatus, setAutoLoadStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  // 소싱 리스트 → 이미지 뷰어에서 넘어온 이미지 자동 로드
+  useEffect(() => {
+    const pendingUrl = sessionStorage.getItem("thumbnail_image_url");
+    if (!pendingUrl) return;
+
+    sessionStorage.removeItem("thumbnail_image_url");
+    const pendingBrand = sessionStorage.getItem("thumbnail_brand") ?? "";
+    const pendingProduct = sessionStorage.getItem("thumbnail_product") ?? "";
+    const pendingPrice = sessionStorage.getItem("thumbnail_price") ?? "";
+    sessionStorage.removeItem("thumbnail_brand");
+    sessionStorage.removeItem("thumbnail_product");
+    sessionStorage.removeItem("thumbnail_price");
+
+    if (pendingBrand) setBrandName(pendingBrand);
+    if (pendingProduct) setProductName(pendingProduct);
+    if (pendingPrice) setPrice(pendingPrice);
+
+    setAutoLoadStatus("loading");
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const scale = Math.min(CANVAS_SIZE / img.width, CANVAS_SIZE / img.height) * 0.85;
+      setImagePos({ x: 0, y: -20, scale });
+      setImage(img);
+      setAutoLoadStatus("done");
+    };
+    img.onerror = () => setAutoLoadStatus("error");
+    img.src = `/api/proxy-image?url=${encodeURIComponent(pendingUrl)}`;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -199,7 +232,22 @@ export default function ThumbnailPage() {
               <span className="text-xs text-gray-400 mt-1">JPG, PNG, WEBP</span>
               <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
             </label>
-            {image && (
+            {autoLoadStatus === "loading" && (
+              <p className="text-xs text-blue-600 mt-2 text-center flex items-center justify-center gap-1">
+                <RefreshCw size={11} className="animate-spin" /> 소싱 이미지 자동 로드 중...
+              </p>
+            )}
+            {autoLoadStatus === "done" && (
+              <p className="text-xs text-green-600 mt-2 text-center">
+                ✓ 소싱 리스트에서 이미지 자동 로드됨
+              </p>
+            )}
+            {autoLoadStatus === "error" && (
+              <p className="text-xs text-red-500 mt-2 text-center">
+                이미지 자동 로드 실패 · 직접 업로드해 주세요
+              </p>
+            )}
+            {autoLoadStatus === "idle" && image && (
               <p className="text-xs text-green-600 mt-2 text-center">
                 ✓ 이미지 로드됨 · 캔버스에서 드래그로 위치 조정, 스크롤로 크기 조정
               </p>

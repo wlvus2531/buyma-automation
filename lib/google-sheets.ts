@@ -23,7 +23,7 @@ const ORDERS_SHEET = "주문내역";
 const SOURCING_HEADERS = [
   "ID", "상품명", "카테고리", "브랜드", "한국구매가(KRW)", "바이마최저가(JPY)",
   "내판매가(JPY)", "경쟁자수", "상태", "환급포함마진율(%)", "환급제외마진율(%)",
-  "배송비(KRW)", "환율(KRW/JPY)", "메모", "등록일",
+  "배송비(KRW)", "환율(KRW/JPY)", "메모", "등록일", "구매처URL",
 ];
 
 const ORDERS_HEADERS = [
@@ -71,7 +71,7 @@ export async function getSourcingItems(): Promise<SourcingItem[]> {
   const sheets = getSheets();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SOURCING_SHEET}!A2:O`,
+    range: `${SOURCING_SHEET}!A2:P`,
   });
   const rows = res.data.values ?? [];
   return rows.map((r) => ({
@@ -90,6 +90,7 @@ export async function getSourcingItems(): Promise<SourcingItem[]> {
     exchangeRate: Number(r[12]) || 0,
     notes: r[13] ?? "",
     createdAt: r[14] ?? "",
+    sourceUrl: r[15] ?? "",
   }));
 }
 
@@ -102,20 +103,20 @@ export async function upsertSourcingItem(item: SourcingItem) {
     item.koreaPurchasePrice, item.buymaLowestPrice, item.sellingPrice,
     item.competitorCount, item.status, item.marginWithRefund,
     item.marginWithoutRefund, item.shippingCost, item.exchangeRate,
-    item.notes, item.createdAt,
+    item.notes, item.createdAt, item.sourceUrl ?? "",
   ];
 
   if (idx >= 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SOURCING_SHEET}!A${idx + 2}:O${idx + 2}`,
+      range: `${SOURCING_SHEET}!A${idx + 2}:P${idx + 2}`,
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
   } else {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SOURCING_SHEET}!A:O`,
+      range: `${SOURCING_SHEET}!A:P`,
       valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
