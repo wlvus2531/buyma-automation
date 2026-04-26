@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSeason } from "@/lib/utils";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다." }, { status: 500 });
+    }
+    const client = new Anthropic({ apiKey });
+
     const { trends, category, budget, keywords, mode, existingItems } = await req.json();
     // mode: "morning" (공격적 신규) | "evening" (방어적 파생)
 

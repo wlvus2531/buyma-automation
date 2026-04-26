@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다." }, { status: 500 });
+    }
+    const client = new Anthropic({ apiKey });
+
     const body = await req.json();
     const { action } = body;
     let prompt = "";
