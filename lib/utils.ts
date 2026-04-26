@@ -36,7 +36,8 @@ export function formatJpy(amount: number): string {
   return new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY" }).format(amount);
 }
 
-export function formatPercent(value: number, decimals = 1): string {
+export function formatPercent(value: number | null | undefined, decimals = 1): string {
+  if (value == null || isNaN(value)) return "—";
   return `${value.toFixed(decimals)}%`;
 }
 

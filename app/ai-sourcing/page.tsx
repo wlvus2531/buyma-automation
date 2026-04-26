@@ -3,11 +3,64 @@
 import { useState, useEffect } from "react";
 import {
   Sparkles, RefreshCw, TrendingUp, Target, Lightbulb,
-  Plus, Sun, Moon, CheckCircle2, Clock,
+  Plus, Sun, Moon, CheckCircle2, Clock, Image as ImageIcon,
 } from "lucide-react";
 import type { AiSourcingItem } from "@/lib/types";
-import { getSeason } from "@/lib/utils";
+import { getSeason, generateId } from "@/lib/utils";
 import clsx from "clsx";
+
+const aiImageCache = new Map<string, string | null>();
+
+function AiCardThumbnail({ productName, brand }: { productName: string; brand: string }) {
+  const query = [brand, productName].filter(Boolean).join(" ").trim();
+  const [imgUrl, setImgUrl] = useState<string | null | "loading">("loading");
+
+  useEffect(() => {
+    if (!query) { setImgUrl(null); return; }
+    if (aiImageCache.has(query)) { setImgUrl(aiImageCache.get(query) ?? null); return; }
+    fetch("/api/search-product-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const url = data.imageUrl ?? null;
+        aiImageCache.set(query, url);
+        setImgUrl(url);
+      })
+      .catch(() => {
+        aiImageCache.set(query, null);
+        setImgUrl(null);
+      });
+  }, [query]);
+
+  if (imgUrl === "loading") {
+    return (
+      <div className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+        <RefreshCw size={12} className="animate-spin text-gray-300" />
+      </div>
+    );
+  }
+  if (!imgUrl) {
+    return (
+      <div className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+        <ImageIcon size={16} className="text-gray-300" />
+      </div>
+    );
+  }
+  return (
+    <div className="w-16 h-16 rounded-xl overflow-hidden border border-gray-200 shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/proxy-image?url=${encodeURIComponent(imgUrl)}`}
+        alt=""
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+    </div>
+  );
+}
 
 const CATEGORIES = ["전체", "패션/의류", "패션잡화", "뷰티/화장품", "라이프스타일", "식품/건강", "문화상품/굿즈"];
 
@@ -103,6 +156,7 @@ export default function AiSourcingPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        id: generateId(),
         productName: `${item.productName} (${item.japaneseName})`,
         category: item.category,
         brand: item.brand,
@@ -111,9 +165,13 @@ export default function AiSourcingPage() {
         sellingPrice: 0,
         competitorCount: 0,
         status: "조사중",
+        marginWithRefund: 0,
+        marginWithoutRefund: 0,
         shippingCost: 0,
         exchangeRate: 10,
         notes: `[AI추천 ${item.confidence}%확신] ${item.reason}`,
+        createdAt: new Date().toLocaleDateString("ko-KR"),
+        sourceUrl: "",
       }),
     });
     if (res.ok) setAddedIds((prev) => new Set(Array.from(prev).concat(item.rank)));
@@ -367,18 +425,21 @@ export default function AiSourcingPage() {
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleAddToSourcing(item)}
-                  disabled={addedIds.has(item.rank)}
-                  className={clsx(
-                    "flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    addedIds.has(item.rank)
-                      ? "bg-green-100 text-green-700 cursor-default"
-                      : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-                  )}
-                >
-                  {addedIds.has(item.rank) ? "추가됨 ✓" : <><Plus size={12} /> 소싱 추가</>}
-                </button>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <AiCardThumbnail productName={item.productName} brand={item.brand} />
+                  <button
+                    onClick={() => handleAddToSourcing(item)}
+                    disabled={addedIds.has(item.rank)}
+                    className={clsx(
+                      "flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                      addedIds.has(item.rank)
+                        ? "bg-green-100 text-green-700 cursor-default"
+                        : "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                    )}
+                  >
+                    {addedIds.has(item.rank) ? "추가됨 ✓" : <><Plus size={12} /> 소싱 추가</>}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
