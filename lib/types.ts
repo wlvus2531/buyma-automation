@@ -74,6 +74,7 @@ export interface AiSourcingItem {
   reason: string;
   sourcingTip: string;
   trend: string;
+  confidence: number; // 0~100
 }
 
 export interface SheetsSyncStatus {
