@@ -4,7 +4,14 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createServerSupabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+function getAdminSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('Supabase 환경변수 미설정 (URL 또는 SERVICE_ROLE_KEY)');
+  return createClient(url, key);
+}
 
 export interface SourcingCandidate {
   name_kr: string;
@@ -108,7 +115,7 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY 미설정');
 
   const client = new Anthropic({ apiKey });
-  const supabase = await createServerSupabase();
+  const supabase = getAdminSupabase();
   const now = new Date();
   const ranAt = now.toISOString();
 
