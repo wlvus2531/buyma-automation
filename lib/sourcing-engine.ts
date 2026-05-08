@@ -152,11 +152,11 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
 
   const { data: inserted, error } = await supabase
     .from('products')
-    .upsert(rows, { onConflict: 'name_kr' })
+    .insert(rows)
     .select('id');
 
   if (error) {
-    console.error('[sourcing-engine] upsert 오류:', error);
+    console.error('[sourcing-engine] insert 오류:', error);
     throw new Error(`DB 저장 실패: ${error.message}`);
   }
 

@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runDailySourcing } from '@/lib/sourcing-engine';
 
+export const maxDuration = 120; // 2분 — Claude 3배치 순차 호출 대응
+
 function authorize(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true; // 미설정 시 개발환경으로 간주
