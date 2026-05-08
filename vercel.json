@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/sourcing/run",
+      "schedule": "0 19 * * *"
+    }
+  ]
+}
