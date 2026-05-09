@@ -15,6 +15,10 @@
     {
       "path": "/api/listing/prepare",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cs",
+      "schedule": "0 23 * * *"
     }
   ]
 }

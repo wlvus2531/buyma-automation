@@ -13,6 +13,7 @@ const PRIMARY_NAV = [
   { href: "/register",  label: "등록 워크플로우", emoji: "📦" },
   { href: "/orders",    label: "주문/발주",   emoji: "🛒" },
   { href: "/monitor",   label: "모니터링",    emoji: "🔔" },
+  { href: "/cs",        label: "CS",          emoji: "💬" },
 ];
 
 const TOOLS_NAV = [

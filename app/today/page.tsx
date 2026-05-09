@@ -93,6 +93,16 @@ export default function TodayPage() {
         .select('*', { count: 'exact', head: true })
         .eq('listing_status', 'approved');
 
+      // CS 미답변 카운트
+      let csPending = 0;
+      try {
+        const csRes = await fetch('/api/cs');
+        if (csRes.ok) {
+          const csData = await csRes.json();
+          csPending = csData.pending || 0;
+        }
+      } catch {}
+
       // 모니터링 알림 카운트 (오늘)
       let monitorAlerts = 0;
       try {
@@ -109,7 +119,7 @@ export default function TodayPage() {
         register_pending: registerPending || 0,
         register_approved: registerApproved || 0,
         orders_new: 0,
-        cs_pending: 0,
+        cs_pending: csPending,
         monitor_alerts: monitorAlerts,
       });
     })();
@@ -121,6 +131,7 @@ export default function TodayPage() {
 
   return (
     <div>
+      <RoadmapCompleteBanner />
       <div className="grid grid-cols-12 gap-6">
         {/* 좌측 메인 (8/12) */}
         <main className="col-span-12 lg:col-span-8">
@@ -143,6 +154,23 @@ export default function TodayPage() {
 // =====================================================
 // 서브 컴포넌트
 // =====================================================
+
+function RoadmapCompleteBanner() {
+  return (
+    <div className="mb-6 rounded-2xl bg-gradient-to-r from-stone-900 to-stone-700 text-white p-5 flex items-center gap-4">
+      <div className="text-3xl">🎉</div>
+      <div className="flex-1">
+        <div className="font-bold text-lg mb-0.5">8주 로드맵 완료!</div>
+        <div className="text-stone-300 text-sm">소싱 → 스크래퍼 → 번역 → 대시보드 → 등록 → 사장님 PWA → Chrome 확장 V1/V2 → CS 자동화 · 전체 파이프라인 가동 중 ✓</div>
+      </div>
+      <div className="hidden sm:grid grid-cols-4 gap-1 text-[10px] text-center shrink-0">
+        {['W1 기초', 'W2 소싱', 'W3 스크래퍼', 'W4 번역', 'W5 등록', 'W6 모니터링', 'W7 자동입력', 'W8 CS'].map((w, i) => (
+          <div key={i} className="bg-white/10 rounded px-1.5 py-1 text-white font-medium">{w} ✓</div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function PageHeader({ user }: { user: User }) {
   return (
@@ -292,10 +320,13 @@ function TaskCardsList({
         emoji="💬"
         title="④ CS"
         timeShare="10%"
-        description="AI 답변 초안 검토 후 전송 (개발 중)"
+        description={
+          counts.cs_pending > 0
+            ? `미답변 ${counts.cs_pending}건 — AI 답변 초안 검토 대기`
+            : 'BUYMA 고객 문의 AI 자동 답변'
+        }
         badge={counts.cs_pending}
-        onStart={() => go('cs', '/today', 'CS 답변')}
-        disabled
+        onStart={() => go('cs', '/cs', 'CS 자동화')}
       />
 
       {/* ⑤ 모니터링 */}
