@@ -37,8 +37,10 @@ export function useActivityFeed(limit: number = 20) {
     })();
 
     // 실시간 구독 — 새 활동 추가 시 맨 앞에 삽입
+    // 채널명을 인스턴스마다 유니크하게 (같은 페이지에서 여러번 사용 시 subscribe 충돌 방지)
+    const channelName = `activity_feed:stream:${Math.random().toString(36).slice(2, 10)}`;
     const channel = supabase
-      .channel('activity_feed:stream')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'activity_feed' },

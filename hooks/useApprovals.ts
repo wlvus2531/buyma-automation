@@ -51,9 +51,9 @@ export function useApprovals() {
 
     loadAll();
 
-    // 실시간 구독
+    // 실시간 구독 (유니크 채널명 — 같은 페이지에서 여러번 사용 시 충돌 방지)
     const channel = supabase
-      .channel('approvals:stream')
+      .channel(`approvals:stream:${Math.random().toString(36).slice(2, 10)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'approvals' },

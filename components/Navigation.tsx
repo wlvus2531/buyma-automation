@@ -35,18 +35,22 @@ export default function Navigation() {
 
   useEffect(() => {
     (async () => {
-      const supabase = createBrowserSupabase();
-      let userId = getCurrentUserId();
-      if (!userId) {
-        const { data } = await supabase.from("users").select("*").eq("role", "operator").limit(1).maybeSingle();
-        if (data) {
-          if (typeof window !== "undefined") localStorage.setItem("current_user_id", data.id);
-          userId = data.id;
+      try {
+        const supabase = createBrowserSupabase();
+        let userId = await getCurrentUserId();
+        if (!userId) {
+          const { data } = await supabase.from("users").select("*").eq("role", "operator").limit(1).maybeSingle();
+          if (data) {
+            if (typeof window !== "undefined") localStorage.setItem("current_user_id", data.id);
+            userId = data.id;
+          }
         }
-      }
-      if (userId) {
-        const { data } = await supabase.from("users").select("*").eq("id", userId).maybeSingle();
-        if (data) setMe(data as User);
+        if (userId) {
+          const { data } = await supabase.from("users").select("*").eq("id", userId).maybeSingle();
+          if (data) setMe(data as User);
+        }
+      } catch (e) {
+        console.warn('[Navigation] user load failed:', e);
       }
     })();
   }, []);

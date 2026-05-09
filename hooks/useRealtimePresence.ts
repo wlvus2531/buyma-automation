@@ -85,7 +85,7 @@ export function useRealtimePresence({
     refresh();
 
     const channel = supabase
-      .channel('user_sessions:presence')
+      .channel(`user_sessions:presence:${Math.random().toString(36).slice(2, 10)}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'user_sessions' },
