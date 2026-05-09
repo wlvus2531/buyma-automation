@@ -31,11 +31,11 @@ export default function OwnerPage() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [activeApproval, setActiveApproval] = useState<ApprovalWithUser | null>(null);
 
-  // 사장님 사용자 로드
+  // 사장님 사용자 로드 (자가 복구: 없으면 자동 생성)
   useEffect(() => {
     (async () => {
       const supabase = createBrowserSupabase();
-      let userId = getCurrentUserId();
+      const userId = await getCurrentUserId();
 
       // /owner는 사장님 전용 — owner role 자동 매칭
       const { data: owner } = await supabase
@@ -50,6 +50,24 @@ export default function OwnerPage() {
           localStorage.setItem('current_user_id', owner.id);
         }
         setMe(owner as User);
+        return;
+      }
+
+      // 사장님 계정이 없으면 자동 생성
+      const { data: created } = await supabase
+        .from('users')
+        .insert({
+          name: '사장님',
+          role: 'owner',
+          avatar_emoji: '👔',
+          is_active: true,
+        })
+        .select()
+        .maybeSingle();
+
+      if (created) {
+        localStorage.setItem('current_user_id', created.id);
+        setMe(created as User);
       }
     })();
   }, []);

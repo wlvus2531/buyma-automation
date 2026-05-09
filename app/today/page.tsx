@@ -39,21 +39,61 @@ export default function TodayPage() {
     monitor_alerts: 0,
   });
 
-  // 사용자 로드
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // 사용자 로드 (자가 복구: 운영자 없으면 자동 생성)
   useEffect(() => {
     (async () => {
-      const supabase = createBrowserSupabase();
-      let userId = getCurrentUserId();
-      if (!userId) {
-        const { data } = await supabase.from('users').select('*').eq('role', 'operator').limit(1).maybeSingle();
-        if (data) {
-          localStorage.setItem('current_user_id', data.id);
-          userId = data.id;
+      try {
+        const supabase = createBrowserSupabase();
+        let userId = await getCurrentUserId();
+
+        // 1. localStorage에 있으면 그걸로 사용자 조회
+        if (userId) {
+          const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+          if (data) {
+            setMe(data as User);
+            return;
+          }
+          // 저장된 user_id가 더 이상 유효하지 않으면 정리
+          localStorage.removeItem('current_user_id');
+          userId = null;
         }
-      }
-      if (userId) {
-        const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
-        if (data) setMe(data as User);
+
+        // 2. 첫 운영자 찾기
+        const { data: existing } = await supabase
+          .from('users')
+          .select('*')
+          .eq('role', 'operator')
+          .limit(1)
+          .maybeSingle();
+
+        if (existing) {
+          localStorage.setItem('current_user_id', existing.id);
+          setMe(existing as User);
+          return;
+        }
+
+        // 3. 운영자가 없으면 시드 생성 (anon insert 허용 가정)
+        const { data: created, error: insertErr } = await supabase
+          .from('users')
+          .insert({
+            name: '운영자',
+            role: 'operator',
+            avatar_emoji: '🧑‍💼',
+            is_active: true,
+          })
+          .select()
+          .maybeSingle();
+
+        if (created) {
+          localStorage.setItem('current_user_id', created.id);
+          setMe(created as User);
+        } else {
+          setLoadError(insertErr?.message ?? '운영자 사용자 생성 실패 — Supabase users 테이블 확인 필요');
+        }
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : String(e));
       }
     })();
   }, []);
@@ -126,6 +166,19 @@ export default function TodayPage() {
   }, [me]);
 
   if (!me) {
+    if (loadError) {
+      return (
+        <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-6 max-w-2xl">
+          <div className="font-bold text-red-900 mb-2">초기화 실패</div>
+          <div className="text-sm text-red-800 mb-3">{loadError}</div>
+          <div className="text-xs text-red-700">
+            Supabase SQL 에디터에서 아래를 실행해주세요:
+            <pre className="mt-2 bg-white p-2 rounded text-stone-800 overflow-x-auto">{`INSERT INTO users (name, role, avatar_emoji, is_active)
+VALUES ('운영자', 'operator', '🧑‍💼', true);`}</pre>
+          </div>
+        </div>
+      );
+    }
     return <div className="text-stone-500">로딩 중...</div>;
   }
 
