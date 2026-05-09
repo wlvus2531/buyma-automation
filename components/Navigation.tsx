@@ -2,76 +2,136 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Sparkles,
-  List,
-  Calculator,
-  ShoppingCart,
-  Image as ImageIcon,
-  RefreshCw,
-  BarChart2,
-  UserCheck,
-  Bot,
-  ClipboardList,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { createBrowserSupabase, getCurrentUserId } from "@/lib/supabase";
+import type { User } from "@/types";
 import clsx from "clsx";
 
-const navItems = [
-  { href: "/", label: "대시보드", icon: LayoutDashboard },
-  { href: "/products", label: "AI 소싱 상품", icon: Bot },
-  { href: "/register", label: "등록 워크플로우", icon: ClipboardList },
-  { href: "/ai-sourcing", label: "AI 소싱 전략", icon: Sparkles },
-  { href: "/sourcing", label: "소싱 리스트", icon: List },
-  { href: "/calculator", label: "마진 계산기", icon: Calculator },
-  { href: "/orders", label: "주문 관리", icon: ShoppingCart },
-  { href: "/analytics", label: "판매 분석", icon: BarChart2 },
-  { href: "/seller", label: "셀러 관리", icon: UserCheck },
-  { href: "/thumbnail", label: "썸네일 생성", icon: ImageIcon },
-  { href: "/sync", label: "구글시트 동기화", icon: RefreshCw },
+const PRIMARY_NAV = [
+  { href: "/today",     label: "오늘 할 일",  emoji: "🏠" },
+  { href: "/products",  label: "AI 상품",     emoji: "🤖" },
+  { href: "/register",  label: "등록 워크플로우", emoji: "📦" },
+  { href: "/orders",    label: "주문/발주",   emoji: "🛒" },
+];
+
+const TOOLS_NAV = [
+  { href: "/calculator",   label: "마진 계산기" },
+  { href: "/ai-sourcing",  label: "AI 소싱 전략" },
+  { href: "/sourcing",     label: "소싱 리스트" },
+  { href: "/japan-helper", label: "일본어 도우미" },
+  { href: "/thumbnail",    label: "썸네일 생성" },
+  { href: "/sync",         label: "구글시트 동기화" },
+  { href: "/seller",       label: "셀러 관리" },
+  { href: "/analytics",    label: "판매 분석" },
+  { href: "/dashboard",    label: "구 대시보드" },
 ];
 
 export default function Navigation() {
   const pathname = usePathname();
+  const [me, setMe] = useState<User | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const supabase = createBrowserSupabase();
+      let userId = getCurrentUserId();
+      if (!userId) {
+        const { data } = await supabase.from("users").select("*").eq("role", "operator").limit(1).maybeSingle();
+        if (data) {
+          if (typeof window !== "undefined") localStorage.setItem("current_user_id", data.id);
+          userId = data.id;
+        }
+      }
+      if (userId) {
+        const { data } = await supabase.from("users").select("*").eq("id", userId).maybeSingle();
+        if (data) setMe(data as User);
+      }
+    })();
+  }, []);
 
   return (
-    <aside className="w-60 bg-white border-r border-gray-200 flex flex-col h-screen sticky top-0">
-      <div className="p-5 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">B</span>
+    <header className="bg-white border-b border-stone-200 sticky top-0 z-30">
+      <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
+        <Link href="/today" className="flex items-center gap-2 shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center text-sm font-bold">B</div>
+          <div className="hidden sm:block">
+            <div className="text-sm font-semibold text-stone-900 leading-none">바이마 운영</div>
+            <div className="text-[10px] text-stone-500 mt-0.5">v3.1 · 실시간 협업</div>
           </div>
-          <div>
-            <p className="font-bold text-gray-900 text-sm leading-tight">바이마 자동화</p>
-            <p className="text-xs text-gray-400">한국→일본 역직구</p>
-          </div>
-        </div>
-      </div>
+        </Link>
 
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
+        <nav className="flex items-center gap-1 flex-1 overflow-x-auto">
+          {PRIMARY_NAV.map(({ href, label, emoji }) => {
+            const active = pathname === href || pathname.startsWith(href + "/");
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={clsx(
+                  "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
+                  active ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100"
+                )}
+              >
+                <span className="mr-1.5">{emoji}</span>{label}
+              </Link>
+            );
+          })}
+
+          {/* 도구 드롭다운 */}
+          <div
+            className="relative"
+            onMouseLeave={() => setToolsOpen(false)}
+          >
+            <button
+              onMouseEnter={() => setToolsOpen(true)}
+              onClick={() => setToolsOpen((v) => !v)}
               className={clsx(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
+                TOOLS_NAV.some((t) => pathname === t.href)
+                  ? "bg-stone-900 text-white"
+                  : "text-stone-600 hover:bg-stone-100"
               )}
             >
-              <Icon size={18} className={active ? "text-indigo-600" : "text-gray-400"} />
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
+              🛠 도구 ▾
+            </button>
+            {toolsOpen && (
+              <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-stone-200 rounded-xl shadow-lg py-1 z-40">
+                {TOOLS_NAV.map(({ href, label }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setToolsOpen(false)}
+                    className={clsx(
+                      "block px-3 py-2 text-sm hover:bg-stone-100",
+                      pathname === href ? "font-semibold text-stone-900" : "text-stone-600"
+                    )}
+                  >
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </nav>
 
-      <div className="p-4 border-t border-gray-100">
-        <p className="text-xs text-gray-400 text-center">바이마 올인원 v1.0</p>
+        {/* 사용자 표시 */}
+        {me && (
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-7 h-7 rounded-full bg-stone-200 flex items-center justify-center text-sm">
+              {me.avatar_emoji}
+            </div>
+            <div className="hidden md:block">
+              <div className="text-xs font-medium text-stone-900 leading-tight">{me.name}</div>
+              <div className="text-[10px] text-stone-500 leading-tight">
+                {me.role === "owner" ? "사장님" : "운영자"}
+              </div>
+            </div>
+            {me.role === "owner" && (
+              <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">OWNER</span>
+            )}
+          </div>
+        )}
       </div>
-    </aside>
+    </header>
   );
 }

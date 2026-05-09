@@ -287,14 +287,22 @@ export default function ProductsPage() {
             매일 새벽 AI가 자동으로 발굴한 상품 — 가격·이미지·번역까지 한 번에
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-600 bg-white ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 transition-all disabled:opacity-50"
-        >
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-600 bg-white ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            새로고침
+          </button>
+          <a
+            href="/register"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-stone-900 text-white hover:bg-stone-700 transition-colors shadow-sm"
+          >
+            등록 워크플로우 →
+          </a>
+        </div>
       </header>
 
       {/* 통계 */}
