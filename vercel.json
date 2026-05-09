@@ -7,6 +7,10 @@
     {
       "path": "/api/scraper/run",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/translation/run",
+      "schedule": "0 21 * * *"
     }
   ]
 }
