@@ -102,36 +102,41 @@ export default function TodayPage() {
   useEffect(() => {
     if (!me) return;
     (async () => {
+      try {
       const supabase = createBrowserSupabase();
 
       // 소싱 결정 대기: name_jp/source_url 있는데 listing_status 미생성
-      const { count: sourcingPending } = await supabase
+      const sp = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .is('listing_status', null)
         .not('name_jp', 'is', null)
         .not('source_url', 'is', null);
+      const sourcingPending = sp.count;
 
       // 오늘 등록 자료 생성 완료된 수 (오늘 만들어진 ready/approved/listed)
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { count: sourcingDone } = await supabase
+      const sd = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .in('listing_status', ['ready', 'approved', 'listed'])
         .gte('created_at', todayStart.toISOString());
+      const sourcingDone = sd.count;
 
       // 사장님 승인 대기
-      const { count: registerPending } = await supabase
+      const rp = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('listing_status', 'ready');
+      const registerPending = rp.count;
 
       // 등록 예정 (사장님 승인 완료, 바이마 미등록)
-      const { count: registerApproved } = await supabase
+      const ra = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('listing_status', 'approved');
+      const registerApproved = ra.count;
 
       // CS 미답변 카운트
       let csPending = 0;
@@ -162,6 +167,9 @@ export default function TodayPage() {
         cs_pending: csPending,
         monitor_alerts: monitorAlerts,
       });
+      } catch (e) {
+        console.warn('[today] counts load failed (continuing with zeros):', e);
+      }
     })();
   }, [me]);
 
