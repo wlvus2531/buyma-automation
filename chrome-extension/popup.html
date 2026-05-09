@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BUYMA 모니터링</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: #f5f5f4;
+      color: #1c1917;
+      font-size: 13px;
+    }
+
+    .header {
+      background: #1c1917;
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-icon {
+      width: 28px;
+      height: 28px;
+      background: #fff;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: #1c1917;
+      font-weight: bold;
+    }
+    .header-title { font-size: 14px; font-weight: 600; }
+    .header-sub { font-size: 10px; color: #a8a29e; margin-top: 1px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      padding: 12px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 1px solid #e7e5e4;
+    }
+    .stat-num { font-size: 22px; font-weight: 700; color: #1c1917; }
+    .stat-num.alert { color: #dc2626; }
+    .stat-label { font-size: 10px; color: #78716c; margin-top: 2px; }
+
+    .section { padding: 0 12px 12px; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #78716c;
+      margin-bottom: 6px;
+    }
+
+    .alert-list { display: flex; flex-direction: column; gap: 6px; }
+    .alert-item {
+      background: #fff;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+    .alert-item .name { font-weight: 600; color: #991b1b; }
+    .alert-item .detail { color: #78716c; font-size: 11px; margin-top: 2px; }
+
+    .empty-state {
+      text-align: center;
+      color: #a8a29e;
+      font-size: 12px;
+      padding: 10px 0;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-top: 1px solid #e7e5e4;
+      font-size: 11px;
+      color: #78716c;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.ok { background: #22c55e; }
+    .dot.err { background: #dc2626; }
+
+    .btn {
+      display: block;
+      width: calc(100% - 24px);
+      margin: 0 12px 12px;
+      padding: 8px;
+      background: #1c1917;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+    .btn:hover { background: #292524; }
+    .btn.secondary {
+      background: transparent;
+      color: #1c1917;
+      border: 1px solid #d6d3d1;
+    }
+    .btn.secondary:hover { background: #f5f5f4; }
+
+    .config { padding: 8px 12px 12px; border-top: 1px solid #e7e5e4; }
+    .config label { display: block; font-size: 10px; color: #78716c; margin-bottom: 4px; }
+    .config input {
+      width: 100%;
+      border: 1px solid #d6d3d1;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 11px;
+      color: #1c1917;
+      background: #fff;
+    }
+    .config input:focus { outline: none; border-color: #1c1917; }
+    .save-msg { font-size: 10px; color: #22c55e; margin-top: 4px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">B</div>
+    <div>
+      <div class="header-title">BUYMA 모니터링</div>
+      <div class="header-sub">경쟁자 가격 실시간 수집</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-num" id="stat-total">-</div>
+      <div class="stat-label">오늘 수집</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-sellers">-</div>
+      <div class="stat-label">셀러 수</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num alert" id="stat-alerts">-</div>
+      <div class="stat-label">알림</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">최근 알림</div>
+    <div class="alert-list" id="alert-list">
+      <div class="empty-state">알림 없음</div>
+    </div>
+  </div>
+
+  <a class="btn" id="dashboard-btn" href="#" target="_blank">대시보드에서 자세히 보기 →</a>
+
+  <div class="status-row">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">연결 확인 중...</span>
+  </div>
+
+  <div class="config">
+    <label>API URL (기본값: vercel 배포 주소)</label>
+    <input type="text" id="api-url-input" placeholder="https://buyma-automation-vi3y.vercel.app" />
+    <div class="save-msg" id="save-msg">저장됨 ✓</div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -93,6 +93,16 @@ export default function TodayPage() {
         .select('*', { count: 'exact', head: true })
         .eq('listing_status', 'approved');
 
+      // 모니터링 알림 카운트 (오늘)
+      let monitorAlerts = 0;
+      try {
+        const monRes = await fetch('/api/monitor/list?summary=true');
+        if (monRes.ok) {
+          const monData = await monRes.json();
+          monitorAlerts = monData.alerts || 0;
+        }
+      } catch {}
+
       setCounts({
         sourcing_pending: sourcingPending || 0,
         sourcing_done: sourcingDone || 0,
@@ -100,7 +110,7 @@ export default function TodayPage() {
         register_approved: registerApproved || 0,
         orders_new: 0,
         cs_pending: 0,
-        monitor_alerts: 0,
+        monitor_alerts: monitorAlerts,
       });
     })();
   }, [me]);
@@ -293,10 +303,13 @@ function TaskCardsList({
         emoji="🔔"
         title="⑤ 모니터링"
         timeShare="10%"
-        description="가격·재고·경쟁자 모니터링 (Chrome 확장 V1 — 개발 중)"
+        description={
+          counts.monitor_alerts > 0
+            ? `경쟁자 가격 변동 ${counts.monitor_alerts}건 알림`
+            : 'Chrome 확장으로 경쟁자 가격·순위 실시간 수집'
+        }
         urgent={counts.monitor_alerts > 0}
-        onStart={() => go('monitor', '/today', '모니터링')}
-        disabled
+        onStart={() => go('monitor', '/monitor', '모니터링')}
       />
     </>
   );

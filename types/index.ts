@@ -123,3 +123,25 @@ export interface ApprovalWithUser extends Approval {
 export interface PresenceUser extends UserSession {
   user: Pick<User, 'id' | 'name' | 'role' | 'avatar_emoji'>;
 }
+
+export interface CompetitorPrice {
+  id: string;
+  product_id: string | null;
+  buyma_item_id: string | null;
+  buyma_url: string | null;
+  item_name: string | null;
+  brand: string | null;
+  seller_name: string | null;
+  seller_rating: number | null;
+  price_jpy: number | null;
+  prev_price_jpy: number | null;
+  is_in_stock: boolean;
+  image_url: string | null;
+  rank_position: number | null;
+  search_keyword: string | null;
+  page_type: string;
+  is_alert: boolean;
+  alert_reason: string | null;
+  captured_at: string;
+  created_at: string;
+}
