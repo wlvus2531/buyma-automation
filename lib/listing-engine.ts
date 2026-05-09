@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
+import { maybeRequestApprovalForListing } from './approval-rules';
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -130,6 +131,20 @@ export async function runDailyListing(): Promise<ListingRunResult> {
         failed++;
       } else {
         prepared++;
+        // 룰 위반 검사 → 승인 요청 자동 생성 + 사장님 푸시
+        await maybeRequestApprovalForListing(
+          {
+            id: product.id,
+            name_kr: product.name_kr,
+            name_jp: product.name_jp,
+            brand: product.brand,
+            buyma_category: listing.buyma_category,
+            cost_krw: product.cost_krw,
+            list_price_jpy: product.list_price_jpy,
+            margin_pct: product.margin_pct,
+          },
+          null
+        ).catch((e) => console.error('[listing-engine] approval-rules 실패:', e));
       }
     } catch (e) {
       console.error(`[listing-engine] ${product.name_kr} 실패:`, e);

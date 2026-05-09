@@ -10,6 +10,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase';
+import { sendPush } from '@/lib/web-push';
+import type { Approval, User } from '@/types';
 
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
@@ -79,47 +81,40 @@ export async function POST(req: NextRequest) {
 }
 
 // =====================================================
-// Web Push 발송 (web-push 라이브러리 필요)
+// Web Push 발송 (web-push 라이브러리)
 // =====================================================
-async function sendWebPush(owner: any, approval: any) {
-  // npm install web-push 후 사용
-  // 환경변수: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
-  // 실제 구현 시 web-push 패키지로 발송
-  // 이 예제에서는 인터페이스만 정의
-
-  const payload = JSON.stringify({
-    title: '승인 대기',
-    body: `${approval.target_label} · ${approval.rule_violated || '확인 필요'}`,
-    icon: '/icon-192.png',
-    badge: '/badge-72.png',
-    data: {
-      approval_id: approval.id,
-      url: `/owner/approve?id=${approval.id}`,
-    },
-    actions: [
-      { action: 'approve', title: '✅ 승인' },
-      { action: 'reject', title: '❌ 거부' },
-    ],
-  });
-
-  // 실제 운영 코드:
-  // import webpush from 'web-push';
-  // webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
-  // await webpush.sendNotification(
-  //   { endpoint: owner.push_endpoint, keys: owner.push_keys },
-  //   payload
-  // );
-
-  console.log('Web Push 발송:', owner.name, payload);
+async function sendWebPush(owner: User, approval: Approval) {
+  if (!owner.push_endpoint || !owner.push_keys) {
+    return { ok: false, error: '구독 정보 없음' };
+  }
+  return sendPush(
+    { endpoint: owner.push_endpoint, keys: owner.push_keys },
+    {
+      title: '승인 대기',
+      body: `${approval.target_label} · ${approval.rule_violated || '확인 필요'}`,
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      tag: approval.id,
+      requireInteraction: true,
+      data: {
+        approval_id: approval.id,
+        url: `/owner?id=${approval.id}`,
+      },
+      actions: [
+        { action: 'approve', title: '✅ 승인' },
+        { action: 'reject', title: '❌ 거부' },
+      ],
+    }
+  );
 }
 
 // =====================================================
 // Discord Webhook 발송
 // =====================================================
-async function sendDiscord(approval: any) {
+async function sendDiscord(approval: Approval & { requester?: { name: string; avatar_emoji?: string } }) {
   if (!DISCORD_WEBHOOK_URL) return;
 
-  const proposed = approval.proposed_value || {};
+  const proposed = (approval.proposed_value as Record<string, number | string>) || {};
   const requester = approval.requester?.name || '운영자';
 
   const embed = {

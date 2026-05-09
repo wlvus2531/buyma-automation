@@ -1,0 +1,33 @@
+{
+  "name": "바이마 운영 사장님 모바일",
+  "short_name": "바이마 사장님",
+  "description": "BUYMA 운영 - 1초 승인 + 실시간 운영 현황",
+  "start_url": "/owner",
+  "scope": "/owner",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafaf9",
+  "theme_color": "#1c1917",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "승인 대기",
+      "short_name": "승인",
+      "url": "/owner?tab=approvals",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "운영 현황",
+      "short_name": "현황",
+      "url": "/owner?tab=status",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ]
+}
