@@ -17,7 +17,6 @@ interface TranslationItem {
   id: string;
   name_kr: string;
   brand: string | null;
-  category: string | null;
 }
 
 interface TranslationResult {
@@ -30,13 +29,13 @@ async function translateBatch(
   items: TranslationItem[]
 ): Promise<TranslationResult[]> {
   const list = items
-    .map((it) => `${it.id}|${it.brand ?? ''}|${it.name_kr}|${it.category ?? ''}`)
+    .map((it) => `${it.id}|${it.brand ?? ''}|${it.name_kr}`)
     .join('\n');
 
   const prompt = `당신은 한국 쇼핑몰 상품명을 일본어(바이마 출품용)로 번역하는 전문가입니다.
 
 아래 상품 목록을 일본어로 번역하세요.
-형식: ID|브랜드|한국어상품명|카테고리
+형식: ID|브랜드|한국어상품명
 
 번역 규칙:
 - 브랜드명은 영문 그대로 유지 (예: SCULPTOR, Matin Kim)
@@ -89,7 +88,7 @@ export async function runDailyTranslation(): Promise<TranslationRunResult> {
   // name_jp가 없는 상품 (최대 60개, 배치당 20개)
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name_kr, brand, category')
+    .select('id, name_kr, brand')
     .is('name_jp', null)
     .order('created_at', { ascending: false })
     .limit(60);

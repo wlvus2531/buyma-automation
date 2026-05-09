@@ -12,11 +12,13 @@ import {
   RefreshCw,
   BarChart2,
   UserCheck,
+  Bot,
 } from "lucide-react";
 import clsx from "clsx";
 
 const navItems = [
   { href: "/", label: "대시보드", icon: LayoutDashboard },
+  { href: "/products", label: "AI 소싱 상품", icon: Bot },
   { href: "/ai-sourcing", label: "AI 소싱 전략", icon: Sparkles },
   { href: "/sourcing", label: "소싱 리스트", icon: List },
   { href: "/calculator", label: "마진 계산기", icon: Calculator },
