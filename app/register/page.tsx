@@ -26,6 +26,7 @@ interface ListingProduct {
   buyma_category: string | null;
   listing_tags: string[] | null;
   listed_at: string | null;
+  buyma_listing_url?: string | null;
 }
 
 type TabKey = "ready" | "approved" | "listed" | "rejected";
@@ -189,22 +190,46 @@ function ProductCard({
           )}
 
           {p.listing_status === "approved" && (
-            <button
-              disabled={isActing}
-              onClick={() => onAction(p.id, "listed")}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
-            >
-              {isActing ? <Loader2 size={12} className="animate-spin" /> : <PackageCheck size={12} />}
-              바이마 등록 완료
-            </button>
+            <>
+              <a
+                href="https://www.buyma.com/buyer/mypage/item_add.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100 transition-all"
+                title="Chrome 확장이 설치되어 있으면 폼이 자동으로 채워집니다"
+              >
+                <Wand2 size={12} />
+                BUYMA에서 자동 입력
+              </a>
+              <button
+                disabled={isActing}
+                onClick={() => onAction(p.id, "listed")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {isActing ? <Loader2 size={12} className="animate-spin" /> : <PackageCheck size={12} />}
+                등록 완료
+              </button>
+            </>
           )}
         </div>
       )}
 
       {p.listing_status === "listed" && p.listed_at && (
-        <div className="px-4 pb-3 text-[11px] text-emerald-600 flex items-center gap-1.5 border-t border-slate-100 pt-2">
-          <PackageCheck size={11} />
-          {new Date(p.listed_at).toLocaleDateString("ko-KR")} 등록 완료
+        <div className="px-4 pb-3 text-[11px] text-emerald-600 flex items-center gap-3 border-t border-slate-100 pt-2">
+          <span className="flex items-center gap-1.5">
+            <PackageCheck size={11} />
+            {new Date(p.listed_at).toLocaleDateString("ko-KR")} 등록 완료
+          </span>
+          {p.buyma_listing_url && (
+            <a
+              href={p.buyma_listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-indigo-600 hover:underline"
+            >
+              <ExternalLink size={10} />바이마 페이지
+            </a>
+          )}
         </div>
       )}
     </div>

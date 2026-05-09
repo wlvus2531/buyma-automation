@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "BUYMA 모니터링",
-  "version": "1.0.0",
-  "description": "바이마 경쟁자 가격·순위 실시간 수집 — buyma-automation 시스템 연동",
+  "name": "BUYMA 운영 자동화",
+  "version": "2.0.0",
+  "description": "바이마 경쟁자 가격 모니터링 + 등록 폼 자동 입력 — buyma-automation 시스템 연동",
   "permissions": ["storage", "notifications", "alarms"],
   "host_permissions": [
     "https://www.buyma.com/*",
@@ -16,10 +16,16 @@
       "matches": ["https://www.buyma.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.buyma.com/*"],
+      "js": ["autofill.js"],
+      "css": ["autofill.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "BUYMA 모니터링"
+    "default_title": "BUYMA 운영 자동화"
   }
 }
