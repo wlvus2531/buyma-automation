@@ -11,6 +11,10 @@
     {
       "path": "/api/translation/run",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/listing/prepare",
+      "schedule": "0 22 * * *"
     }
   ]
 }
