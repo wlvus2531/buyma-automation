@@ -50,7 +50,6 @@ export async function POST(req: NextRequest) {
 
     for (const item of items) {
       if (!item.buyma_item_id && !item.buyma_url) continue;
-      if (!item.price_jpy && item.page_type !== 'item') continue;
 
       // 1. 이전 캡처 조회 (가격 변동 감지)
       let prevPrice: number | null = null;

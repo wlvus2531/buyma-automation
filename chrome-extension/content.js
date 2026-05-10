@@ -10,8 +10,9 @@
   window.__buymaMonitorLoaded = true;
 
   const url = location.href;
+  console.log('[BUYMA Monitor] content.js 실행됨', url);
   const isItemPage   = /\/item\/[^/?#]+/.test(url);
-  const isSearchPage = url.includes('/buy/') || url.includes('/search/');
+  const isSearchPage = url.includes('/buy/') || url.includes('/search/') || /\/r\/[^/?#]+/.test(url);
   const isBrandPage  = /\/brand\/\d+/.test(url);
 
   if (!isItemPage && !isSearchPage && !isBrandPage) return;
@@ -107,7 +108,7 @@
     // 다양한 BUYMA 버전 셀렉터 순차 시도
     const CONTAINER_SELECTORS = [
       '.js-itemBox', '.item-box', '[data-item-id]',
-      '.sc-item', '.item-list-item', '[class*="ItemBox"]',
+      '.sc-item', '.item-list-item',
     ];
     let containers = [];
     for (const sel of CONTAINER_SELECTORS) {
@@ -115,8 +116,9 @@
       if (containers.length > 0) break;
     }
 
-    // fallback: 상품 링크 수집
-    if (containers.length === 0) {
+    // fallback: 상품 링크 수집 (컨테이너가 없거나 유효한 링크가 없을 때)
+    const hasValidContainers = containers.some(el => el.querySelector('a[href*="/item/"]'));
+    if (containers.length === 0 || !hasValidContainers) {
       const seen = new Set();
       const links = Array.from(document.querySelectorAll('a[href*="/item/"]'));
       return links
@@ -189,6 +191,7 @@
   // ──────────────────────────────────────────────
   setTimeout(() => {
     const items = isItemPage ? [extractSingleItem()].filter(Boolean) : extractListItems();
+    console.log('[BUYMA Monitor] 수집 결과', items.length, '개', items[0]);
     if (items.length === 0) return;
 
     chrome.runtime.sendMessage({
@@ -197,6 +200,8 @@
       capturedAt: new Date().toISOString(),
       pageUrl: url,
       pageType,
+    }, (res) => {
+      console.log('[BUYMA Monitor] 전송 결과', res, chrome.runtime.lastError);
     });
   }, 3000);
 })();

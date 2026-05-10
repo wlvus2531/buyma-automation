@@ -105,6 +105,7 @@ function notify(title, message, id) {
 // 메시지 핸들러
 // ──────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  console.log('[BG] 메시지 수신:', msg.type);
 
   // ── V1: 경쟁자 데이터 수신
   if (msg.type === 'BUYMA_ITEMS_CAPTURED') {
