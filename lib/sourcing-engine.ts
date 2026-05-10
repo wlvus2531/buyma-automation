@@ -4,13 +4,49 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('Supabase 환경변수 미설정 (URL 또는 SERVICE_ROLE_KEY)');
   return createClient(url, key);
+}
+
+// 패스 사유 → 한국어 레이블 (앱 전체 공유 — products 페이지와 동일)
+const REASON_LABEL: Record<string, string> = {
+  brand_mismatch: '브랜드 미스매치',
+  price_off: '가격 책정 이상',
+  duplicate: '이미 비슷한 상품 등록됨',
+  low_margin: '마진 부족',
+  off_season: '시즌 안 맞음',
+  other: '기타',
+};
+
+// 최근 2주 운영자 패스 사유 집계 → 프롬프트에 주입할 문자열
+async function getRecentSkipFeedback(supabase: SupabaseClient): Promise<string> {
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from('products')
+    .select('skip_reason')
+    .eq('status', 'skipped')
+    .gte('decided_at', cutoff)
+    .not('skip_reason', 'is', null);
+
+  if (!data || data.length === 0) return '';
+
+  const counts = new Map<string, number>();
+  for (const r of data as { skip_reason: string }[]) {
+    counts.set(r.skip_reason, (counts.get(r.skip_reason) ?? 0) + 1);
+  }
+
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `${REASON_LABEL[reason] ?? reason} (${count}회)`);
+
+  if (!top.length) return '';
+  return `\n[운영자 피드백 - 최근 2주 패스된 주요 사유]\n- ${top.join('\n- ')}\n위 패턴은 적극 회피하세요. 같은 사유로 패스될 가능성이 높은 상품은 추천하지 마세요.\n`;
 }
 
 export interface SourcingCandidate {
@@ -48,7 +84,7 @@ function getSeason(month: number) {
   return '겨울';
 }
 
-async function callClaude(client: Anthropic, category: { label: string; count: number; hint: string }, date: Date): Promise<SourcingCandidate[]> {
+async function callClaude(client: Anthropic, category: { label: string; count: number; hint: string }, date: Date, feedback: string): Promise<SourcingCandidate[]> {
   const month = date.getMonth() + 1;
   const season = getSeason(month);
 
@@ -64,7 +100,7 @@ async function callClaude(client: Anthropic, category: { label: string; count: n
 - 경쟁 셀러가 적은 틈새 상품 선호
 - K-아이돌 착용/언급 브랜드 포함: Thug Club, SCULPTOR, Matin Kim, LUV IS TRUE, THEAIRTOWN, ADLV, COVERNAT
 - ${season} 시즌에 적합한 상품
-
+${feedback}
 반드시 아래 JSON 배열 형식만 출력 (코드블록 없이):
 [
   {
@@ -119,11 +155,15 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
   const now = new Date();
   const ranAt = now.toISOString();
 
+  // 운영자 패스 피드백 1회 집계 (모든 배치에 동일하게 주입)
+  const feedback = await getRecentSkipFeedback(supabase);
+  if (feedback) console.log('[sourcing-engine] 피드백 주입:', feedback.replace(/\n/g, ' | '));
+
   // 3개 카테고리 순차 호출 (병렬 시 rate limit 위험)
   const allCandidates: SourcingCandidate[] = [];
   for (const batch of CATEGORY_BATCHES) {
     try {
-      const items = await callClaude(client, batch, now);
+      const items = await callClaude(client, batch, now, feedback);
       allCandidates.push(...items);
     } catch (e) {
       console.error(`[sourcing-engine] ${batch.label} 배치 실패:`, e);

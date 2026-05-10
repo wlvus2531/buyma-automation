@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   RefreshCw, Sparkles, ExternalLink, ImageOff,
   Search, LayoutGrid, Rows3, Wand2, Languages, Globe2,
   TrendingUp, Check, Loader2, Filter, ThumbsUp, ThumbsDown, RotateCcw,
+  Layers, ChevronLeft, ChevronRight, Undo2, Keyboard, X,
 } from "lucide-react";
 
 interface Product {
@@ -20,20 +21,43 @@ interface Product {
   ai_score: number | null;
   status: string;
   listing_status: string | null;
+  skip_reason: string | null;
+  decided_at: string | null;
   source_url: string | null;
   thumbnail_url: string | null;
   created_at: string;
 }
 
 type PipelineStep = "sourcing" | "scraper" | "translation";
-type ViewMode = "grid" | "list";
+type ViewMode = "grid" | "list" | "queue";
 type FilterMode = "all" | "ready" | "pending";
+type ActionType = "select" | "skip" | "restore" | "restore_select";
+
+const SKIP_REASONS: { key: string; label: string; short: string }[] = [
+  { key: "brand_mismatch", label: "브랜드 안 맞음", short: "브랜드" },
+  { key: "price_off",      label: "가격 이상",      short: "가격" },
+  { key: "duplicate",      label: "중복 등록",      short: "중복" },
+  { key: "low_margin",     label: "마진 부족",      short: "마진" },
+  { key: "off_season",     label: "시즌 안 맞음",   short: "시즌" },
+  { key: "other",          label: "기타",            short: "기타" },
+];
 
 const stepConfig: Record<PipelineStep, { label: string; icon: typeof Wand2; endpoint: string; accent: string }> = {
   sourcing:    { label: "AI 소싱",      icon: Wand2,     endpoint: "/api/sourcing/run",    accent: "from-violet-500 to-fuchsia-500" },
   scraper:     { label: "가격·URL 수집", icon: Globe2,    endpoint: "/api/scraper/run",     accent: "from-sky-500 to-cyan-500" },
   translation: { label: "일본어 번역",   icon: Languages, endpoint: "/api/translation/run", accent: "from-emerald-500 to-teal-500" },
 };
+
+interface ToastState {
+  msg: string;
+  undo?: () => void;
+}
+
+interface UndoSnapshot {
+  id: string;
+  prev: { status: string; listing_status: string | null; skip_reason: string | null; decided_at: string | null };
+  action: ActionType;
+}
 
 function ScoreRing({ score }: { score: number | null }) {
   if (score == null) return null;
@@ -71,20 +95,49 @@ function StatusChip({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ProductCard({ p, onAction }: { p: Product; onAction: (id: string, action: 'select' | 'skip' | 'restore') => void }) {
-  const isSkipped = p.status === 'skipped';
-  const isSelected = p.listing_status && p.listing_status !== 'none';
+// 패스 사유 picker — 인라인 popover (그리드/리스트/큐 공용)
+function ReasonPicker({ onPick, onClose }: { onPick: (reason: string) => void; onClose: () => void }) {
   return (
-    <div className={`group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col ${isSkipped ? 'opacity-40 border-slate-200/40' : 'border-slate-200/60 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50'}`}>
-      {/* 썸네일 */}
+    <div className="absolute inset-x-2 bottom-2 z-20 bg-white rounded-xl shadow-2xl ring-1 ring-slate-900/10 p-3 animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">패스 사유</p>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+          <X size={13} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {SKIP_REASONS.map((r, i) => (
+          <button
+            key={r.key}
+            onClick={() => onPick(r.key)}
+            className="inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-[11px] font-semibold text-slate-600 bg-slate-50 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+          >
+            <span className="text-[9px] text-slate-400 font-bold">{i + 1}</span>
+            {r.short}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({
+  p, onAction, pickerOpen, onOpenPicker, onClosePicker,
+}: {
+  p: Product;
+  onAction: (id: string, action: ActionType, reason?: string) => void;
+  pickerOpen: boolean;
+  onOpenPicker: () => void;
+  onClosePicker: () => void;
+}) {
+  const isSkipped = p.status === "skipped";
+  const isSelected = p.listing_status === "pending" || p.listing_status === "approved";
+  return (
+    <div className={`group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col ${isSkipped ? "opacity-50 border-slate-200/40" : "border-slate-200/60 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50"}`}>
       <div className="relative aspect-square bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden">
         {p.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={p.thumbnail_url}
-            alt={p.name_kr}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+          <img src={p.thumbnail_url} alt={p.name_kr} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-300">
             <ImageOff size={32} strokeWidth={1.5} />
@@ -92,47 +145,29 @@ function ProductCard({ p, onAction }: { p: Product; onAction: (id: string, actio
         )}
         <ScoreRing score={p.ai_score} />
         {p.source_url && (
-          <a
-            href={p.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-white/90 backdrop-blur-md hover:bg-white shadow-md flex items-center justify-center text-slate-600 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <a href={p.source_url} target="_blank" rel="noopener noreferrer" className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-white/90 backdrop-blur-md hover:bg-white shadow-md flex items-center justify-center text-slate-600 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all" onClick={(e) => e.stopPropagation()}>
             <ExternalLink size={13} />
           </a>
         )}
       </div>
 
-      {/* 본문 */}
       <div className="p-4 flex-1 flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[11px] font-semibold tracking-wide uppercase text-indigo-500">
-            {p.brand ?? "—"}
-          </p>
+          <p className="text-[11px] font-semibold tracking-wide uppercase text-indigo-500">{p.brand ?? "—"}</p>
           <MarginPill pct={p.margin_pct} />
         </div>
 
-        <h3 className="font-semibold text-slate-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem]">
-          {p.name_kr}
-        </h3>
-
-        {p.name_jp && (
-          <p className="text-xs text-slate-400 line-clamp-1 -mt-1">{p.name_jp}</p>
-        )}
+        <h3 className="font-semibold text-slate-900 text-sm leading-snug line-clamp-2 min-h-[2.5rem]">{p.name_kr}</h3>
+        {p.name_jp && <p className="text-xs text-slate-400 line-clamp-1 -mt-1">{p.name_jp}</p>}
 
         <div className="flex items-end justify-between mt-auto pt-2 border-t border-slate-100">
           <div>
             <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">매입</p>
-            <p className="text-sm font-bold text-slate-900 tabular-nums">
-              ₩{p.cost_krw?.toLocaleString() ?? "—"}
-            </p>
+            <p className="text-sm font-bold text-slate-900 tabular-nums">₩{p.cost_krw?.toLocaleString() ?? "—"}</p>
           </div>
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">판매</p>
-            <p className="text-sm font-bold text-slate-900 tabular-nums">
-              {p.list_price_jpy ? `¥${p.list_price_jpy.toLocaleString()}` : "—"}
-            </p>
+            <p className="text-sm font-bold text-slate-900 tabular-nums">{p.list_price_jpy ? `¥${p.list_price_jpy.toLocaleString()}` : "—"}</p>
           </div>
         </div>
 
@@ -140,28 +175,29 @@ function ProductCard({ p, onAction }: { p: Product; onAction: (id: string, actio
           <StatusChip ok={!!p.source_url} label="URL" />
           <StatusChip ok={!!p.thumbnail_url} label="이미지" />
           <StatusChip ok={!!p.name_jp} label="번역" />
+          {p.skip_reason && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-rose-50 text-rose-500">
+              {SKIP_REASONS.find((r) => r.key === p.skip_reason)?.short ?? p.skip_reason}
+            </span>
+          )}
         </div>
 
-        {/* 선택 / 패스 버튼 */}
         <div className="flex gap-2 pt-2">
           {isSkipped ? (
-            <button
-              onClick={() => onAction(p.id, 'restore')}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors"
-            >
+            <button onClick={() => onAction(p.id, "restore")} className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors">
               <RotateCcw size={11} /> 복원
             </button>
           ) : (
             <>
               <button
-                onClick={() => onAction(p.id, 'select')}
-                disabled={!!isSelected}
-                className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${isSelected ? 'bg-emerald-50 text-emerald-600 cursor-default' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                onClick={() => onAction(p.id, "select")}
+                disabled={isSelected}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${isSelected ? "bg-emerald-50 text-emerald-600 cursor-default" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"}`}
               >
-                <ThumbsUp size={11} /> {isSelected ? '선택됨' : '선택'}
+                <ThumbsUp size={11} /> {isSelected ? "선택됨" : "선택"}
               </button>
               <button
-                onClick={() => onAction(p.id, 'skip')}
+                onClick={onOpenPicker}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 bg-slate-50 hover:bg-rose-50 hover:text-rose-500 transition-colors"
               >
                 <ThumbsDown size={11} /> 패스
@@ -170,6 +206,13 @@ function ProductCard({ p, onAction }: { p: Product; onAction: (id: string, actio
           )}
         </div>
       </div>
+
+      {pickerOpen && (
+        <ReasonPicker
+          onPick={(reason) => { onAction(p.id, "skip", reason); onClosePicker(); }}
+          onClose={onClosePicker}
+        />
+      )}
     </div>
   );
 }
@@ -195,12 +238,8 @@ function ProductRow({ p }: { p: Product }) {
         </div>
       </td>
       <td className="px-4 py-3 text-xs text-slate-500">{p.source_mall ?? "—"}</td>
-      <td className="px-4 py-3 font-bold text-slate-900 tabular-nums whitespace-nowrap">
-        ₩{p.cost_krw?.toLocaleString() ?? "—"}
-      </td>
-      <td className="px-4 py-3 font-bold text-slate-900 tabular-nums whitespace-nowrap">
-        {p.list_price_jpy ? `¥${p.list_price_jpy.toLocaleString()}` : "—"}
-      </td>
+      <td className="px-4 py-3 font-bold text-slate-900 tabular-nums whitespace-nowrap">₩{p.cost_krw?.toLocaleString() ?? "—"}</td>
+      <td className="px-4 py-3 font-bold text-slate-900 tabular-nums whitespace-nowrap">{p.list_price_jpy ? `¥${p.list_price_jpy.toLocaleString()}` : "—"}</td>
       <td className="px-4 py-3"><MarginPill pct={p.margin_pct} /></td>
       <td className="px-4 py-3">
         {p.ai_score != null && (
@@ -221,12 +260,7 @@ function ProductRow({ p }: { p: Product }) {
       </td>
       <td className="px-4 py-3">
         {p.source_url && (
-          <a
-            href={p.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-          >
+          <a href={p.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
             <ExternalLink size={13} />
           </a>
         )}
@@ -235,15 +269,225 @@ function ProductRow({ p }: { p: Product }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────
+// Queue Mode — 한 장씩 결정
+// ────────────────────────────────────────────────────────────
+function QueueMode({
+  items, idx, setIdx, onAction, onExit,
+}: {
+  items: Product[];
+  idx: number;
+  setIdx: (n: number | ((i: number) => number)) => void;
+  onAction: (id: string, action: ActionType, reason?: string) => void;
+  onExit: () => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const current = items[idx];
+  const total = items.length;
+
+  // 키보드
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      // 사유 picker가 열려 있으면 숫자 단축키만 활성
+      if (pickerOpen) {
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= SKIP_REASONS.length) {
+          e.preventDefault();
+          onAction(current.id, "skip", SKIP_REASONS[num - 1].key);
+          setPickerOpen(false);
+          setIdx((i) => Math.min(i + 1, items.length - 1));
+        } else if (e.key === "Escape") {
+          setPickerOpen(false);
+        }
+        return;
+      }
+
+      if (e.key === "y" || e.key === "Y" || e.key === "ArrowRight") {
+        e.preventDefault();
+        if (current) {
+          onAction(current.id, "select");
+          setIdx((i) => Math.min(i + 1, items.length - 1));
+        }
+      } else if (e.key === "n" || e.key === "N" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (current) setPickerOpen(true);
+      } else if (e.key === "j" || e.key === "J") {
+        e.preventDefault();
+        setIdx((i) => Math.min(i + 1, items.length - 1));
+      } else if (e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        setIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onExit();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [current, items.length, onAction, pickerOpen, setIdx, onExit]);
+
+  if (!current) {
+    return (
+      <div className="bg-white rounded-2xl ring-1 ring-slate-200/70 py-20 text-center">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-500 mb-4">
+          <Check size={26} />
+        </div>
+        <p className="text-base font-semibold text-slate-700">결정할 상품이 없습니다</p>
+        <p className="text-sm text-slate-400 mt-1">필터를 변경하거나 그리드 뷰로 돌아가세요</p>
+        <button onClick={onExit} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">
+          그리드로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
+  const progress = total > 0 ? ((idx + 1) / total) * 100 : 0;
+  const isSkipped = current.status === "skipped";
+  const isSelected = current.listing_status === "pending" || current.listing_status === "approved";
+
+  return (
+    <div className="bg-white rounded-3xl ring-1 ring-slate-200/70 overflow-hidden">
+      {/* 진행률 + 액션 바 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setIdx((i) => Math.max(i - 1, 0))} disabled={idx === 0} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-30">
+            <ChevronLeft size={16} />
+          </button>
+          <div className="text-sm font-bold text-slate-900 tabular-nums">{idx + 1} / {total}</div>
+          <button onClick={() => setIdx((i) => Math.min(i + 1, total - 1))} disabled={idx >= total - 1} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 disabled:opacity-30">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+        <div className="hidden md:flex items-center gap-2 text-[11px] text-slate-400">
+          <Keyboard size={12} />
+          <kbd className="px-1.5 py-0.5 rounded bg-slate-100 font-mono">Y</kbd> 선택
+          <kbd className="px-1.5 py-0.5 rounded bg-slate-100 font-mono">N</kbd> 패스
+          <kbd className="px-1.5 py-0.5 rounded bg-slate-100 font-mono">J/K</kbd> 이동
+          <kbd className="px-1.5 py-0.5 rounded bg-slate-100 font-mono">Esc</kbd> 닫기
+        </div>
+        <button onClick={onExit} className="text-slate-400 hover:text-slate-700">
+          <X size={16} />
+        </button>
+      </div>
+      {/* 진행률 바 */}
+      <div className="h-1 bg-slate-100">
+        <div className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+      </div>
+
+      {/* 메인 카드 */}
+      <div className="grid md:grid-cols-2 gap-0 relative">
+        {/* 이미지 */}
+        <div className="relative aspect-square md:aspect-auto bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden">
+          {current.thumbnail_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={current.thumbnail_url} alt={current.name_kr} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-300">
+              <ImageOff size={64} strokeWidth={1.2} />
+            </div>
+          )}
+          <ScoreRing score={current.ai_score} />
+        </div>
+
+        {/* 메타 + 액션 */}
+        <div className="p-8 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-[11px] font-semibold text-indigo-600 uppercase tracking-wider">
+              {current.brand ?? "브랜드 미지정"}
+            </span>
+            <MarginPill pct={current.margin_pct} />
+          </div>
+
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900 leading-tight">{current.name_kr}</h2>
+          {current.name_jp && <p className="text-sm text-slate-500 -mt-2">{current.name_jp}</p>}
+
+          <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">매입가</p>
+              <p className="text-xl font-bold text-slate-900 tabular-nums mt-1">₩{current.cost_krw?.toLocaleString() ?? "—"}</p>
+              {current.ship_krw > 0 && <p className="text-[11px] text-slate-400 mt-0.5">+ 배송 ₩{current.ship_krw.toLocaleString()}</p>}
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">판매가</p>
+              <p className="text-xl font-bold text-slate-900 tabular-nums mt-1">{current.list_price_jpy ? `¥${current.list_price_jpy.toLocaleString()}` : "—"}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">{current.source_mall ?? "—"}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <StatusChip ok={!!current.source_url} label="URL 수집" />
+            <StatusChip ok={!!current.thumbnail_url} label="이미지" />
+            <StatusChip ok={!!current.name_jp} label="일본어 번역" />
+            {current.source_url && (
+              <a href={current.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50">
+                <ExternalLink size={10} /> 원본
+              </a>
+            )}
+            {current.skip_reason && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-50 text-rose-500">
+                패스 사유: {SKIP_REASONS.find((r) => r.key === current.skip_reason)?.label ?? current.skip_reason}
+              </span>
+            )}
+          </div>
+
+          {/* 액션 버튼 */}
+          <div className="flex gap-3 mt-auto pt-4">
+            {isSkipped ? (
+              <button onClick={() => { onAction(current.id, "restore"); }} className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors">
+                <RotateCcw size={14} /> 복원
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => { onAction(current.id, "select"); setIdx((i) => Math.min(i + 1, items.length - 1)); }}
+                  disabled={isSelected}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all ${isSelected ? "bg-emerald-50 text-emerald-600 cursor-default" : "bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg hover:shadow-emerald-200"}`}
+                >
+                  <ThumbsUp size={15} /> {isSelected ? "이미 선택됨" : "선택 (Y)"}
+                </button>
+                <button onClick={() => setPickerOpen(true)} className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+                  <ThumbsDown size={15} /> 패스 (N)
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {pickerOpen && (
+          <div className="absolute inset-x-6 bottom-6 z-30">
+            <ReasonPicker
+              onPick={(reason) => {
+                onAction(current.id, "skip", reason);
+                setPickerOpen(false);
+                setIdx((i) => Math.min(i + 1, items.length - 1));
+              }}
+              onClose={() => setPickerOpen(false)}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Page
+// ────────────────────────────────────────────────────────────
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState<PipelineStep | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [view, setView] = useState<ViewMode>("grid");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [showSkipped, setShowSkipped] = useState(false);
+  const [queueIdx, setQueueIdx] = useState(0);
+  const [gridPickerFor, setGridPickerFor] = useState<string | null>(null);
+  const lastSnapshotRef = useRef<UndoSnapshot | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -255,9 +499,10 @@ export default function ProductsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // toast 자동 사라짐
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
+    const t = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -267,49 +512,95 @@ export default function ProductsPage() {
       const res = await fetch(stepConfig[step].endpoint, { method: "POST" });
       const data = await res.json();
       if (!data.ok) {
-        setToast(`✕ ${stepConfig[step].label}: ${data.error ?? "실행 실패"}`);
-      } else if (step === "sourcing") setToast(`✓ ${data.saved}개 신규 소싱 완료`);
-      else if (step === "scraper") setToast(`✓ ${data.updated}개 가격/URL 수집`);
-      else setToast(`✓ ${data.translated}개 번역 완료`);
+        setToast({ msg: `✕ ${stepConfig[step].label}: ${data.error ?? "실행 실패"}` });
+      } else if (step === "sourcing") setToast({ msg: `✓ ${data.saved}개 신규 소싱 완료` });
+      else if (step === "scraper") setToast({ msg: `✓ ${data.updated}개 가격/URL 수집` });
+      else setToast({ msg: `✓ ${data.translated}개 번역 완료` });
       await load();
     } catch {
-      setToast(`✕ ${stepConfig[step].label} 실행 실패`);
+      setToast({ msg: `✕ ${stepConfig[step].label} 실행 실패` });
     } finally {
       setRunning(null);
     }
   }
 
+  // 액션 처리 + Undo 스냅샷 + 토스트
+  const handleAction = useCallback(async (id: string, action: ActionType, reason?: string) => {
+    const product = products.find((p) => p.id === id);
+    if (!product) return;
+
+    // 스냅샷 (이후 Undo 시 복원용)
+    if (action === "select" || action === "skip") {
+      lastSnapshotRef.current = {
+        id,
+        action,
+        prev: {
+          status: product.status,
+          listing_status: product.listing_status,
+          skip_reason: product.skip_reason,
+          decided_at: product.decided_at,
+        },
+      };
+    }
+
+    // Optimistic update
+    setProducts((prev) => prev.map((p) => {
+      if (p.id !== id) return p;
+      const now = new Date().toISOString();
+      if (action === "skip") return { ...p, status: "skipped", skip_reason: reason ?? null, decided_at: now };
+      if (action === "select") return { ...p, listing_status: "pending", decided_at: now };
+      if (action === "restore") return { ...p, status: "active", skip_reason: null, decided_at: null };
+      if (action === "restore_select") return { ...p, listing_status: null, decided_at: null };
+      return p;
+    }));
+
+    // API
+    await fetch("/api/products", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action, reason }),
+    });
+
+    // Undo 토스트
+    if (action === "select" || action === "skip") {
+      const reasonLabel = reason ? SKIP_REASONS.find((r) => r.key === reason)?.label : null;
+      const msg = action === "select" ? "✓ 등록 워크플로우에 추가" : `패스됨${reasonLabel ? ` · ${reasonLabel}` : ""}`;
+      setToast({
+        msg,
+        undo: () => {
+          const snap = lastSnapshotRef.current;
+          if (!snap || snap.id !== id) return;
+          const reverseAction = snap.action === "select" ? "restore_select" : "restore";
+          handleAction(id, reverseAction);
+          setToast(null);
+        },
+      });
+    }
+  }, [products]);
+
   const stats = useMemo(() => {
     const total = products.length;
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const decidedToday = products.filter((p) => p.decided_at && new Date(p.decided_at) >= todayStart);
+    const selectedToday = decidedToday.filter((p) => p.listing_status && p.listing_status !== "none").length;
+    const skippedToday = decidedToday.filter((p) => p.status === "skipped").length;
     return {
       total,
       withUrl: products.filter((p) => p.source_url).length,
       withJp: products.filter((p) => p.name_jp).length,
       withThumb: products.filter((p) => p.thumbnail_url).length,
       avgScore: total ? Math.round(products.reduce((a, p) => a + (p.ai_score ?? 0), 0) / total) : 0,
+      decidedToday: decidedToday.length,
+      selectedToday,
+      skippedToday,
+      pending: products.filter((p) => p.status !== "skipped" && (!p.listing_status || p.listing_status === "none")).length,
     };
   }, [products]);
 
-  async function handleAction(id: string, action: 'select' | 'skip' | 'restore') {
-    await fetch('/api/products', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, action }),
-    });
-    setProducts((prev) => prev.map((p) => {
-      if (p.id !== id) return p;
-      if (action === 'skip') return { ...p, status: 'skipped' };
-      if (action === 'restore') return { ...p, status: 'active' };
-      if (action === 'select') return { ...p, listing_status: 'pending' };
-      return p;
-    }));
-    if (action === 'select') setToast('✓ 등록 워크플로우에 추가됐습니다');
-    if (action === 'skip') setToast('패스 처리됐습니다');
-  }
-
   const filtered = useMemo(() => {
     return products.filter((p) => {
-      if (!showSkipped && p.status === 'skipped') return false;
+      if (!showSkipped && p.status === "skipped") return false;
       const q = search.toLowerCase();
       const matchSearch = !q ||
         p.name_kr.toLowerCase().includes(q) ||
@@ -321,9 +612,13 @@ export default function ProductsPage() {
     });
   }, [products, search, filter, showSkipped]);
 
+  // queue 모드 진입 시 인덱스 보정
+  useEffect(() => {
+    if (queueIdx >= filtered.length) setQueueIdx(Math.max(filtered.length - 1, 0));
+  }, [filtered.length, queueIdx]);
+
   return (
-    <div className="space-y-8">
-      {/* 헤더 */}
+    <div className="space-y-6">
       <header className="flex items-end justify-between gap-6 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -333,29 +628,35 @@ export default function ProductsPage() {
             </span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">소싱 상품</h1>
-          <p className="text-sm text-slate-500 mt-1.5">
-            매일 새벽 AI가 자동으로 발굴한 상품 — 가격·이미지·번역까지 한 번에
-          </p>
+          <p className="text-sm text-slate-500 mt-1.5">매일 새벽 AI가 자동 발굴 → 운영자가 결정 → 등록 워크플로우</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-600 bg-white ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 transition-all disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            새로고침
+          <button onClick={load} disabled={loading} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-600 bg-white ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-slate-300 transition-all disabled:opacity-50">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />새로고침
           </button>
-          <a
-            href="/register"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-stone-900 text-white hover:bg-stone-700 transition-colors shadow-sm"
-          >
+          <a href="/register" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-stone-900 text-white hover:bg-stone-700 transition-colors shadow-sm">
             등록 워크플로우 →
           </a>
         </div>
       </header>
 
-      {/* 통계 */}
+      {/* 오늘 진행률 */}
+      <div className="flex items-center gap-2 flex-wrap bg-gradient-to-r from-violet-50/60 to-fuchsia-50/60 rounded-2xl p-3 ring-1 ring-violet-100/50">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white ring-1 ring-violet-200 text-[11px] font-bold text-violet-700">오늘</span>
+        <span className="text-xs text-slate-500">결정함</span>
+        <span className="text-sm font-bold text-slate-900 tabular-nums">{stats.decidedToday}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-xs text-slate-500">선택</span>
+        <span className="text-sm font-bold text-emerald-600 tabular-nums">{stats.selectedToday}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-xs text-slate-500">패스</span>
+        <span className="text-sm font-bold text-rose-500 tabular-nums">{stats.skippedToday}</span>
+        <span className="text-slate-300">·</span>
+        <span className="text-xs text-slate-500">미결정</span>
+        <span className="text-sm font-bold text-slate-900 tabular-nums">{stats.pending}</span>
+      </div>
+
+      {/* 통계 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "전체 상품", value: stats.total, sub: "AI 추천", tone: "from-violet-500 to-indigo-500" },
@@ -372,7 +673,7 @@ export default function ProductsPage() {
         ))}
       </div>
 
-      {/* 파이프라인 액션 바 */}
+      {/* 파이프라인 */}
       <div className="bg-white rounded-2xl ring-1 ring-slate-200/70 p-2 flex items-center gap-2 flex-wrap">
         <p className="text-xs font-semibold text-slate-500 px-3">파이프라인</p>
         <div className="h-5 w-px bg-slate-200" />
@@ -395,99 +696,92 @@ export default function ProductsPage() {
             </button>
           );
         })}
-        {toast && (
-          <div className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-medium animate-in fade-in slide-in-from-right-2 duration-300">
-            {toast}
-          </div>
-        )}
       </div>
 
       {/* 검색 + 필터 + 뷰 토글 */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[260px]">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="상품명, 브랜드 검색..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-white ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-400 focus:outline-none transition-all"
-          />
-        </div>
+      {view !== "queue" && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[260px]">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="상품명, 브랜드 검색..." className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-white ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-400 focus:outline-none transition-all" />
+          </div>
 
-        <div className="inline-flex items-center bg-white ring-1 ring-slate-200 rounded-xl p-1">
-          {([
-            { v: "all", label: "전체", icon: Filter },
-            { v: "ready", label: "완료", icon: Check },
-            { v: "pending", label: "진행중", icon: Loader2 },
-          ] as const).map(({ v, label, icon: Icon }) => (
-            <button
-              key={v}
-              onClick={() => setFilter(v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === v ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              <Icon size={12} />
-              {label}
+          <div className="inline-flex items-center bg-white ring-1 ring-slate-200 rounded-xl p-1">
+            {([
+              { v: "all", label: "전체", icon: Filter },
+              { v: "ready", label: "완료", icon: Check },
+              { v: "pending", label: "진행중", icon: Loader2 },
+            ] as const).map(({ v, label, icon: Icon }) => (
+              <button key={v} onClick={() => setFilter(v)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === v ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <Icon size={12} />{label}
+              </button>
+            ))}
+          </div>
+
+          <button onClick={() => setShowSkipped((v) => !v)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold ring-1 transition-all ${showSkipped ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-500 ring-slate-200 hover:text-slate-700"}`}>
+            <ThumbsDown size={12} /> 패스 {showSkipped ? "숨기기" : "보기"}
+          </button>
+
+          <div className="inline-flex items-center bg-white ring-1 ring-slate-200 rounded-xl p-1">
+            <button onClick={() => setView("grid")} className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all ${view === "grid" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}>
+              <LayoutGrid size={14} />
             </button>
-          ))}
+            <button onClick={() => setView("list")} className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all ${view === "list" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}>
+              <Rows3 size={14} />
+            </button>
+            <button
+              onClick={() => { setView("queue"); setQueueIdx(0); }}
+              className="inline-flex items-center justify-center gap-1 px-2 h-8 rounded-lg transition-all text-slate-400 hover:text-slate-700"
+              title="결정 큐 모드"
+            >
+              <Layers size={14} /> <span className="text-[11px] font-semibold">큐</span>
+            </button>
+          </div>
         </div>
-
-        <button
-          onClick={() => setShowSkipped((v) => !v)}
-          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold ring-1 transition-all ${showSkipped ? 'bg-slate-900 text-white ring-slate-900' : 'bg-white text-slate-500 ring-slate-200 hover:text-slate-700'}`}
-        >
-          <ThumbsDown size={12} /> 패스 {showSkipped ? '숨기기' : '보기'}
-        </button>
-
-        <div className="inline-flex items-center bg-white ring-1 ring-slate-200 rounded-xl p-1">
-          <button
-            onClick={() => setView("grid")}
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all ${view === "grid" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}
-          >
-            <LayoutGrid size={14} />
-          </button>
-          <button
-            onClick={() => setView("list")}
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all ${view === "list" ? "bg-slate-900 text-white" : "text-slate-400 hover:text-slate-700"}`}
-          >
-            <Rows3 size={14} />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* 콘텐츠 */}
       {loading ? (
-        <div className={view === "grid" ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" : "space-y-2"}>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className={view === "grid" ? "bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden" : "bg-white rounded-xl ring-1 ring-slate-200/70 h-16"}>
-              {view === "grid" && (
-                <>
-                  <div className="aspect-square bg-slate-100 animate-pulse" />
-                  <div className="p-4 space-y-2">
-                    <div className="h-3 bg-slate-100 rounded w-1/3 animate-pulse" />
-                    <div className="h-4 bg-slate-100 rounded animate-pulse" />
-                    <div className="h-4 bg-slate-100 rounded w-2/3 animate-pulse" />
-                  </div>
-                </>
-              )}
+            <div key={i} className="bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden">
+              <div className="aspect-square bg-slate-100 animate-pulse" />
+              <div className="p-4 space-y-2">
+                <div className="h-3 bg-slate-100 rounded w-1/3 animate-pulse" />
+                <div className="h-4 bg-slate-100 rounded animate-pulse" />
+                <div className="h-4 bg-slate-100 rounded w-2/3 animate-pulse" />
+              </div>
             </div>
           ))}
         </div>
+      ) : view === "queue" ? (
+        <QueueMode
+          items={filtered}
+          idx={queueIdx}
+          setIdx={setQueueIdx}
+          onAction={handleAction}
+          onExit={() => setView("grid")}
+        />
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl ring-1 ring-slate-200/70 py-20 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-50 text-slate-300 mb-4">
             <Sparkles size={26} strokeWidth={1.5} />
           </div>
-          <p className="text-base font-semibold text-slate-700">
-            {search || filter !== "all" ? "조건에 맞는 상품이 없습니다" : "AI 소싱을 시작하세요"}
-          </p>
-          <p className="text-sm text-slate-400 mt-1">
-            {search || filter !== "all" ? "검색어나 필터를 변경해 보세요" : "위 ① AI 소싱 버튼을 눌러 30개 상품을 발굴합니다"}
-          </p>
+          <p className="text-base font-semibold text-slate-700">{search || filter !== "all" ? "조건에 맞는 상품이 없습니다" : "AI 소싱을 시작하세요"}</p>
+          <p className="text-sm text-slate-400 mt-1">{search || filter !== "all" ? "검색어나 필터를 변경해 보세요" : "위 ① AI 소싱 버튼을 눌러 30개 상품을 발굴합니다"}</p>
         </div>
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filtered.map((p) => <ProductCard key={p.id} p={p} onAction={handleAction} />)}
+          {filtered.map((p) => (
+            <ProductCard
+              key={p.id}
+              p={p}
+              onAction={handleAction}
+              pickerOpen={gridPickerFor === p.id}
+              onOpenPicker={() => setGridPickerFor(p.id)}
+              onClosePicker={() => setGridPickerFor(null)}
+            />
+          ))}
         </div>
       ) : (
         <div className="bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden">
@@ -505,6 +799,24 @@ export default function ProductsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Undo 토스트 */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 inline-flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900 text-white text-sm font-medium shadow-2xl ring-1 ring-white/10 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <span>{toast.msg}</span>
+          {toast.undo && (
+            <button
+              onClick={() => { toast.undo!(); }}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold transition-colors"
+            >
+              <Undo2 size={12} /> 되돌리기
+            </button>
+          )}
+          <button onClick={() => setToast(null)} className="text-white/50 hover:text-white">
+            <X size={14} />
+          </button>
         </div>
       )}
     </div>
