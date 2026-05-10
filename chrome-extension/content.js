@@ -10,7 +10,6 @@
   window.__buymaMonitorLoaded = true;
 
   const url = location.href;
-  console.log('[BUYMA Monitor] content.js 실행됨', url);
   const isItemPage   = /\/item\/[^/?#]+/.test(url);
   const isSearchPage = url.includes('/buy/') || url.includes('/search/') || /\/r\/[^/?#]+/.test(url);
   const isBrandPage  = /\/brand\/\d+/.test(url);
@@ -191,7 +190,6 @@
   // ──────────────────────────────────────────────
   setTimeout(() => {
     const items = isItemPage ? [extractSingleItem()].filter(Boolean) : extractListItems();
-    console.log('[BUYMA Monitor] 수집 결과', items.length, '개', items[0]);
     if (items.length === 0) return;
 
     chrome.runtime.sendMessage({
@@ -200,8 +198,6 @@
       capturedAt: new Date().toISOString(),
       pageUrl: url,
       pageType,
-    }, (res) => {
-      console.log('[BUYMA Monitor] 전송 결과', res, chrome.runtime.lastError);
     });
   }, 3000);
 })();
