@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   RefreshCw, Sparkles, ExternalLink, ImageOff,
   Search, LayoutGrid, Rows3, Wand2, Languages, Globe2,
-  TrendingUp, Check, Loader2, Filter,
+  TrendingUp, Check, Loader2, Filter, ThumbsUp, ThumbsDown, RotateCcw,
 } from "lucide-react";
 
 interface Product {
@@ -19,6 +19,7 @@ interface Product {
   margin_pct: number | null;
   ai_score: number | null;
   status: string;
+  listing_status: string | null;
   source_url: string | null;
   thumbnail_url: string | null;
   created_at: string;
@@ -70,9 +71,11 @@ function StatusChip({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
-function ProductCard({ p }: { p: Product }) {
+function ProductCard({ p, onAction }: { p: Product; onAction: (id: string, action: 'select' | 'skip' | 'restore') => void }) {
+  const isSkipped = p.status === 'skipped';
+  const isSelected = p.listing_status && p.listing_status !== 'none';
   return (
-    <div className="group relative bg-white rounded-2xl border border-slate-200/60 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden flex flex-col">
+    <div className={`group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col ${isSkipped ? 'opacity-40 border-slate-200/40' : 'border-slate-200/60 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50'}`}>
       {/* 썸네일 */}
       <div className="relative aspect-square bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden">
         {p.thumbnail_url ? (
@@ -137,6 +140,34 @@ function ProductCard({ p }: { p: Product }) {
           <StatusChip ok={!!p.source_url} label="URL" />
           <StatusChip ok={!!p.thumbnail_url} label="이미지" />
           <StatusChip ok={!!p.name_jp} label="번역" />
+        </div>
+
+        {/* 선택 / 패스 버튼 */}
+        <div className="flex gap-2 pt-2">
+          {isSkipped ? (
+            <button
+              onClick={() => onAction(p.id, 'restore')}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors"
+            >
+              <RotateCcw size={11} /> 복원
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => onAction(p.id, 'select')}
+                disabled={!!isSelected}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${isSelected ? 'bg-emerald-50 text-emerald-600 cursor-default' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+              >
+                <ThumbsUp size={11} /> {isSelected ? '선택됨' : '선택'}
+              </button>
+              <button
+                onClick={() => onAction(p.id, 'skip')}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 bg-slate-50 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+              >
+                <ThumbsDown size={11} /> 패스
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -212,6 +243,7 @@ export default function ProductsPage() {
   const [view, setView] = useState<ViewMode>("grid");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [showSkipped, setShowSkipped] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -258,8 +290,26 @@ export default function ProductsPage() {
     };
   }, [products]);
 
+  async function handleAction(id: string, action: 'select' | 'skip' | 'restore') {
+    await fetch('/api/products', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action }),
+    });
+    setProducts((prev) => prev.map((p) => {
+      if (p.id !== id) return p;
+      if (action === 'skip') return { ...p, status: 'skipped' };
+      if (action === 'restore') return { ...p, status: 'active' };
+      if (action === 'select') return { ...p, listing_status: 'pending' };
+      return p;
+    }));
+    if (action === 'select') setToast('✓ 등록 워크플로우에 추가됐습니다');
+    if (action === 'skip') setToast('패스 처리됐습니다');
+  }
+
   const filtered = useMemo(() => {
     return products.filter((p) => {
+      if (!showSkipped && p.status === 'skipped') return false;
       const q = search.toLowerCase();
       const matchSearch = !q ||
         p.name_kr.toLowerCase().includes(q) ||
@@ -269,7 +319,7 @@ export default function ProductsPage() {
       const matchFilter = filter === "all" || (filter === "ready" && ready) || (filter === "pending" && !ready);
       return matchSearch && matchFilter;
     });
-  }, [products, search, filter]);
+  }, [products, search, filter, showSkipped]);
 
   return (
     <div className="space-y-8">
@@ -382,6 +432,13 @@ export default function ProductsPage() {
           ))}
         </div>
 
+        <button
+          onClick={() => setShowSkipped((v) => !v)}
+          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold ring-1 transition-all ${showSkipped ? 'bg-slate-900 text-white ring-slate-900' : 'bg-white text-slate-500 ring-slate-200 hover:text-slate-700'}`}
+        >
+          <ThumbsDown size={12} /> 패스 {showSkipped ? '숨기기' : '보기'}
+        </button>
+
         <div className="inline-flex items-center bg-white ring-1 ring-slate-200 rounded-xl p-1">
           <button
             onClick={() => setView("grid")}
@@ -430,7 +487,7 @@ export default function ProductsPage() {
         </div>
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {filtered.map((p) => <ProductCard key={p.id} p={p} />)}
+          {filtered.map((p) => <ProductCard key={p.id} p={p} onAction={handleAction} />)}
         </div>
       ) : (
         <div className="bg-white rounded-2xl ring-1 ring-slate-200/70 overflow-hidden">
