@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-  RefreshCw, Sparkles, ExternalLink, ImageOff,
+  RefreshCw, Sparkles, ExternalLink,
   Search, LayoutGrid, Rows3, Wand2, Languages, Globe2,
   TrendingUp, Check, Loader2, Filter, ThumbsUp, ThumbsDown, RotateCcw,
-  Layers, ChevronLeft, ChevronRight, Undo2, Keyboard, X,
+  Layers, ChevronLeft, ChevronRight, Undo2, Keyboard, X, Image as ImageIcon,
 } from "lucide-react";
 
 interface Product {
@@ -86,6 +86,66 @@ function MarginPill({ pct }: { pct: number | null }) {
   );
 }
 
+// 브랜드/이름 기반 결정적 그라디언트 (같은 입력 → 같은 색)
+const PLACEHOLDER_GRADIENTS = [
+  "from-violet-400 via-fuchsia-400 to-pink-400",
+  "from-sky-400 via-cyan-400 to-teal-400",
+  "from-emerald-400 via-teal-400 to-cyan-400",
+  "from-amber-400 via-orange-400 to-rose-400",
+  "from-indigo-400 via-violet-400 to-purple-400",
+  "from-rose-400 via-pink-400 to-fuchsia-400",
+  "from-slate-500 via-slate-400 to-stone-400",
+  "from-lime-400 via-emerald-400 to-teal-400",
+];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function getInitial(p: { brand: string | null; name_kr: string }): string {
+  const src = p.brand || p.name_kr || "?";
+  // 한글이면 첫 글자, 영문이면 첫 영문자만
+  const m = src.match(/[A-Za-z]/);
+  return (m ? m[0] : src.charAt(0)).toUpperCase();
+}
+
+function ProductThumb({
+  p, size = "card",
+}: { p: Product; size?: "card" | "row" | "queue" }) {
+  const [errored, setErrored] = useState(false);
+  const showImg = !!p.thumbnail_url && !errored;
+  const gradient = PLACEHOLDER_GRADIENTS[hashString(p.brand || p.name_kr) % PLACEHOLDER_GRADIENTS.length];
+  const initial = getInitial(p);
+
+  if (showImg) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={p.thumbnail_url!}
+        alt={p.name_kr}
+        onError={() => setErrored(true)}
+        className={size === "row" ? "w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200" : "w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"}
+      />
+    );
+  }
+
+  // Placeholder (그라디언트 + 이니셜)
+  const sizing = size === "row" ? "w-11 h-11 rounded-xl text-base" : "w-full h-full text-5xl";
+  return (
+    <div className={`relative ${sizing} flex items-center justify-center bg-gradient-to-br ${gradient} text-white font-black tracking-tight overflow-hidden`}>
+      <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.4),transparent)]" />
+      <span className="relative drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">{initial}</span>
+      {size !== "row" && (
+        <span className="absolute bottom-2 left-2 right-2 text-[9px] font-bold uppercase tracking-widest text-white/70 truncate text-center">
+          {p.brand || "no image"}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function StatusChip({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium ${ok ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-400"}`}>
@@ -135,14 +195,7 @@ function ProductCard({
   return (
     <div className={`group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col ${isSkipped ? "opacity-50 border-slate-200/40" : "border-slate-200/60 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/50"}`}>
       <div className="relative aspect-square bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden">
-        {p.thumbnail_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.thumbnail_url} alt={p.name_kr} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-300">
-            <ImageOff size={32} strokeWidth={1.5} />
-          </div>
-        )}
+        <ProductThumb p={p} size="card" />
         <ScoreRing score={p.ai_score} />
         {p.source_url && (
           <a href={p.source_url} target="_blank" rel="noopener noreferrer" className="absolute bottom-3 right-3 w-8 h-8 rounded-full bg-white/90 backdrop-blur-md hover:bg-white shadow-md flex items-center justify-center text-slate-600 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all" onClick={(e) => e.stopPropagation()}>
@@ -222,14 +275,7 @@ function ProductRow({ p }: { p: Product }) {
     <tr className="hover:bg-slate-50/70 transition-colors group">
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          {p.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={p.thumbnail_url} alt="" className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200" />
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center text-slate-300">
-              <ImageOff size={14} />
-            </div>
-          )}
+          <ProductThumb p={p} size="row" />
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">{p.brand ?? "—"}</p>
             <p className="font-semibold text-slate-900 text-sm truncate max-w-[280px]">{p.name_kr}</p>
@@ -381,14 +427,7 @@ function QueueMode({
       <div className="grid md:grid-cols-2 gap-0 relative">
         {/* 이미지 */}
         <div className="relative aspect-square md:aspect-auto bg-gradient-to-br from-slate-50 to-slate-100 overflow-hidden">
-          {current.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={current.thumbnail_url} alt={current.name_kr} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <ImageOff size={64} strokeWidth={1.2} />
-            </div>
-          )}
+          <ProductThumb p={current} size="queue" />
           <ScoreRing score={current.ai_score} />
         </div>
 
@@ -487,6 +526,7 @@ export default function ProductsPage() {
   const [showSkipped, setShowSkipped] = useState(false);
   const [queueIdx, setQueueIdx] = useState(0);
   const [gridPickerFor, setGridPickerFor] = useState<string | null>(null);
+  const [refreshingThumbs, setRefreshingThumbs] = useState(false);
   const lastSnapshotRef = useRef<UndoSnapshot | null>(null);
 
   const load = useCallback(async () => {
@@ -505,6 +545,24 @@ export default function ProductsPage() {
     const t = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  async function refreshThumbnails() {
+    setRefreshingThumbs(true);
+    try {
+      const res = await fetch("/api/scraper/run?mode=thumbnails", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) {
+        setToast({ msg: `✕ 썸네일 재수집: ${data.error ?? "실행 실패"}` });
+      } else {
+        setToast({ msg: `✓ 썸네일 ${data.updated}개 재수집 (실패 ${data.failed}, 미발견 ${data.skipped})` });
+      }
+      await load();
+    } catch {
+      setToast({ msg: "✕ 썸네일 재수집 실패" });
+    } finally {
+      setRefreshingThumbs(false);
+    }
+  }
 
   async function runPipeline(step: PipelineStep) {
     setRunning(step);
@@ -696,6 +754,16 @@ export default function ProductsPage() {
             </button>
           );
         })}
+        <div className="h-5 w-px bg-slate-200" />
+        <button
+          onClick={refreshThumbnails}
+          disabled={refreshingThumbs || running !== null}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          title="썸네일이 비어있는 상품에 대해 네이버 검색 재시도 (광범위 쿼리)"
+        >
+          {refreshingThumbs ? <Loader2 size={14} className="animate-spin" /> : <ImageIcon size={14} />}
+          썸네일 재수집
+        </button>
       </div>
 
       {/* 검색 + 필터 + 뷰 토글 */}

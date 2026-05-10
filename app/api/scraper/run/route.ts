@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { runDailyScraper } from '@/lib/scraper-engine';
+import { runDailyScraper, ScraperMode } from '@/lib/scraper-engine';
 
 export const maxDuration = 120;
 
@@ -17,15 +17,23 @@ function authorize(req: NextRequest): boolean {
   return auth === `Bearer ${secret}`;
 }
 
+function parseMode(req: NextRequest): ScraperMode {
+  const url = new URL(req.url);
+  const m = url.searchParams.get('mode');
+  return m === 'thumbnails' ? 'thumbnails' : 'new';
+}
+
 export async function GET(req: NextRequest) {
   if (!authorize(req)) {
     return NextResponse.json({ error: '인증 실패' }, { status: 401 });
   }
 
   try {
-    const result = await runDailyScraper();
+    const mode = parseMode(req);
+    const result = await runDailyScraper(mode);
     return NextResponse.json({
       ok: true,
+      mode,
       updated: result.updated,
       failed: result.failed,
       skipped: result.skipped,

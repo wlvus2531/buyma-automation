@@ -58,18 +58,25 @@ export interface ScraperRunResult {
   ran_at: string;
 }
 
-export async function runDailyScraper(): Promise<ScraperRunResult> {
+export type ScraperMode = 'new' | 'thumbnails';
+
+export async function runDailyScraper(mode: ScraperMode = 'new'): Promise<ScraperRunResult> {
   const supabase = getAdminSupabase();
   const ranAt = new Date().toISOString();
 
-  // source_url이 없는 sourcing 상태 상품들 (최대 50개)
-  const { data: products, error: fetchError } = await supabase
+  // mode=new: source_url 없는 신규 / mode=thumbnails: thumbnail_url만 없는 것
+  let q = supabase
     .from('products')
-    .select('id, name_kr, brand, source_mall')
-    .is('source_url', null)
-    .eq('status', 'sourcing')
+    .select('id, name_kr, brand, source_mall, source_url, thumbnail_url')
+    .neq('status', 'skipped')
     .order('created_at', { ascending: false })
     .limit(50);
+
+  q = mode === 'thumbnails'
+    ? q.is('thumbnail_url', null)
+    : q.is('source_url', null).eq('status', 'sourcing');
+
+  const { data: products, error: fetchError } = await q;
 
   if (fetchError) throw new Error(`products 조회 실패: ${fetchError.message}`);
   if (!products || products.length === 0) {
@@ -81,26 +88,45 @@ export async function runDailyScraper(): Promise<ScraperRunResult> {
   let skipped = 0;
 
   for (const product of products) {
-    const query = product.brand
-      ? `${product.brand} ${product.name_kr}`
-      : product.name_kr;
+    // 광범위 쿼리: full → without brand → 첫 2단어 (썸네일 모드에서 점진적 fallback)
+    const queries = product.brand
+      ? [
+          `${product.brand} ${product.name_kr}`,
+          product.name_kr,
+          product.name_kr.split(/\s+/).slice(0, 2).join(' '),
+        ]
+      : [
+          product.name_kr,
+          product.name_kr.split(/\s+/).slice(0, 2).join(' '),
+        ];
+    const uniqueQueries = [...new Set(queries.filter((s) => s && s.length >= 2))];
 
     try {
-      const item = await searchNaver(query);
-      if (!item) {
-        skipped++;
-        continue;
+      let item = null;
+      for (const query of uniqueQueries) {
+        item = await searchNaver(query);
+        if (item?.image) break; // 이미지 있는 결과 발견 시 중단
+        await new Promise((r) => setTimeout(r, 120));
       }
+      if (!item) { skipped++; continue; }
 
       const costKrw = parseInt(item.lprice, 10);
+      const updatePayload: Record<string, unknown> = {
+        thumbnail_url: item.image || product.thumbnail_url,
+      };
+      // 신규 모드에서만 source_url/cost/mall 덮어씀 (썸네일 모드는 보존)
+      if (mode === 'new') {
+        updatePayload.source_url = item.link;
+        updatePayload.cost_krw = isNaN(costKrw) ? undefined : costKrw;
+        updatePayload.source_mall = item.mallName || product.source_mall;
+      } else if (!product.source_url && item.link) {
+        // 썸네일 모드라도 source_url이 비어 있으면 채워줌
+        updatePayload.source_url = item.link;
+      }
+
       const { error: updateError } = await supabase
         .from('products')
-        .update({
-          source_url: item.link,
-          thumbnail_url: item.image,
-          cost_krw: isNaN(costKrw) ? undefined : costKrw,
-          source_mall: item.mallName || product.source_mall,
-        })
+        .update(updatePayload)
         .eq('id', product.id);
 
       if (updateError) {
@@ -113,7 +139,7 @@ export async function runDailyScraper(): Promise<ScraperRunResult> {
       // 네이버 API rate limit 방지 (10 req/s)
       await new Promise((r) => setTimeout(r, 120));
     } catch (e) {
-      console.error(`[scraper] 검색 실패 "${query}":`, e);
+      console.error(`[scraper] 검색 실패 "${product.name_kr}":`, e);
       failed++;
     }
   }
@@ -122,11 +148,13 @@ export async function runDailyScraper(): Promise<ScraperRunResult> {
   await supabase.from('activity_feed').insert({
     user_id: null,
     actor_label: '스크래퍼 엔진',
-    action_type: 'daily_scraper_run',
+    action_type: mode === 'thumbnails' ? 'thumbnail_refresh_run' : 'daily_scraper_run',
     target_type: 'products_batch',
     target_id: null,
-    target_label: `가격/URL 수집 ${updated}개 완료`,
-    details: { total: products.length, updated, failed, skipped, ran_at: ranAt },
+    target_label: mode === 'thumbnails'
+      ? `썸네일 재수집 ${updated}개 완료`
+      : `가격/URL 수집 ${updated}개 완료`,
+    details: { total: products.length, updated, failed, skipped, mode, ran_at: ranAt },
   });
 
   return { updated, failed, skipped, ran_at: ranAt };
