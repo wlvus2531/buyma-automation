@@ -1,13 +1,13 @@
 {
-  "name": "바이마 운영 사장님 모바일",
-  "short_name": "바이마 사장님",
+  "name": "ModanK · 바이마 운영",
+  "short_name": "ModanK",
   "description": "BUYMA 운영 - 1초 승인 + 실시간 운영 현황",
   "start_url": "/owner",
   "scope": "/owner",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fafaf9",
-  "theme_color": "#1c1917",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "/icon.svg",

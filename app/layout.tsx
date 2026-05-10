@@ -4,8 +4,13 @@ import NavigationGate from "@/components/NavigationGate";
 import LayoutMain from "@/components/LayoutMain";
 
 export const metadata: Metadata = {
-  title: "바이마 운영 v3.1",
+  title: "ModanK · 바이마 운영 v3.1",
   description: "BUYMA 한국→일본 역직구 — 실시간 협업 + 양방향 승인",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -59,10 +59,10 @@ export default function Navigation() {
     <header className="bg-white border-b border-stone-200 sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
         <Link href="/today" className="flex items-center gap-2 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center text-sm font-bold">B</div>
+          <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold" style={{ fontFamily: "'Times New Roman', Georgia, serif", fontSize: '18px' }}>B</div>
           <div className="hidden sm:block">
-            <div className="text-sm font-semibold text-stone-900 leading-none">바이마 운영</div>
-            <div className="text-[10px] text-stone-500 mt-0.5">v3.1 · 실시간 협업</div>
+            <div className="text-sm font-semibold text-stone-900 leading-none" style={{ fontFamily: "'Times New Roman', Georgia, serif" }}>ModanK.</div>
+            <div className="text-[10px] text-stone-500 mt-0.5">바이마 운영 v3.1</div>
           </div>
         </Link>
 
