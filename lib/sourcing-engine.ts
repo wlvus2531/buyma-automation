@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { loadBrandRules, checkBrand, checkSource } from './brand-rules';
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -174,8 +175,27 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
     throw new Error('모든 카테고리 배치 실패');
   }
 
-  // Supabase upsert — 같은 날 같은 name_kr은 덮어씀
-  const rows = allCandidates.map((c) => ({
+  // 하드 필터 ① — 금지/제한/판매권한 필요 브랜드 제거 (v4 P0)
+  const rules = await loadBrandRules(supabase);
+  const blockedItems: { name: string; brand: string; reason: string }[] = [];
+  const filtered = allCandidates.filter((c) => {
+    const brandCheck = checkBrand(c.brand, rules);
+    const sourceCheck = checkSource(c.source_mall, rules);
+    if (!brandCheck.allowed || !sourceCheck.allowed) {
+      const rule = brandCheck.matchedRule ?? sourceCheck.matchedRule;
+      blockedItems.push({ name: c.name_kr, brand: c.brand ?? '', reason: rule?.reason ?? '하드 필터' });
+      return false;
+    }
+    return true;
+  });
+  if (blockedItems.length > 0) {
+    console.log(`[sourcing-engine] 하드 필터 차단 ${blockedItems.length}건:`, blockedItems.map((b) => `${b.brand}/${b.name}`).join(', '));
+  }
+  if (filtered.length === 0) {
+    throw new Error('하드 필터 후 남은 후보 없음');
+  }
+
+  const rows = filtered.map((c) => ({
     name_kr: c.name_kr,
     name_jp: c.name_jp || null,
     brand: c.brand || null,
@@ -202,6 +222,7 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
 
   const saved = inserted?.length ?? 0;
   const skipped = allCandidates.length - saved;
+  const blocked = blockedItems.length;
 
   // activity_feed 기록
   await supabase.from('activity_feed').insert({
@@ -215,6 +236,8 @@ export async function runDailySourcing(): Promise<SourcingRunResult> {
       total: allCandidates.length,
       saved,
       skipped,
+      blocked,
+      blocked_items: blockedItems,
       categories: CATEGORY_BATCHES.map((b) => b.label),
       ran_at: ranAt,
     },

@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { authorizeCron, cronUnauthorized } from '@/lib/cron-auth';
 import { runDailyListing } from '@/lib/listing-engine';
 
 export const maxDuration = 120;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!authorizeCron(req)) return cronUnauthorized();
   try {
     const result = await runDailyListing();
     return NextResponse.json({ ok: true, ...result });

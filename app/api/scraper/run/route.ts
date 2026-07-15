@@ -1,21 +1,15 @@
 /**
  * GET  /api/scraper/run  — Vercel Cron (매일 20:00 UTC = 05:00 JST)
- * POST /api/scraper/run  — 수동 트리거
+ * POST /api/scraper/run  — 수동 트리거 (앱 내 버튼)
  *
- * 인증: Authorization: Bearer {CRON_SECRET}
+ * 인증: GET은 Authorization: Bearer {CRON_SECRET} 필수 (프로덕션)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeCron, cronUnauthorized } from '@/lib/cron-auth';
 import { runDailyScraper, ScraperMode } from '@/lib/scraper-engine';
 
 export const maxDuration = 120;
-
-function authorize(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const auth = req.headers.get('authorization');
-  return auth === `Bearer ${secret}`;
-}
 
 function parseMode(req: NextRequest): ScraperMode {
   const url = new URL(req.url);
@@ -23,11 +17,7 @@ function parseMode(req: NextRequest): ScraperMode {
   return m === 'thumbnails' ? 'thumbnails' : 'new';
 }
 
-export async function GET(req: NextRequest) {
-  if (!authorize(req)) {
-    return NextResponse.json({ error: '인증 실패' }, { status: 401 });
-  }
-
+async function handleRun(req: NextRequest) {
   try {
     const mode = parseMode(req);
     const result = await runDailyScraper(mode);
@@ -48,6 +38,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
+export async function GET(req: NextRequest) {
+  if (!authorizeCron(req)) return cronUnauthorized();
+  return handleRun(req);
+}
+
+// POST = UI 수동 트리거. 앱 레벨 인증 도입 전까지 개방 — cron(GET)만 시크릿 강제
 export async function POST(req: NextRequest) {
-  return GET(req);
+  return handleRun(req);
 }

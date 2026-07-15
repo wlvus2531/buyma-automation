@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { maybeRequestApprovalForListing } from './approval-rules';
+import { loadBrandRules, checkBrand } from './brand-rules';
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -110,8 +111,22 @@ export async function runDailyListing(): Promise<ListingRunResult> {
 
   let prepared = 0;
   let failed = 0;
+  let blocked = 0;
+
+  // 하드 필터 ② — 등록 준비 단계에서 금지/제한 브랜드 차단 (v4 P0)
+  const rules = await loadBrandRules(supabase);
 
   for (const product of products as ListingProduct[]) {
+    const brandCheck = checkBrand(product.brand, rules);
+    if (!brandCheck.allowed) {
+      blocked++;
+      await supabase
+        .from('products')
+        .update({ status: 'skipped', skip_reason: 'brand_blocked', decided_at: new Date().toISOString() })
+        .eq('id', product.id);
+      console.log(`[listing-engine] 하드 필터 차단: ${product.brand}/${product.name_kr} — ${brandCheck.matchedRule?.reason}`);
+      continue;
+    }
     try {
       const listing = await generateListing(client, product);
 
@@ -159,7 +174,7 @@ export async function runDailyListing(): Promise<ListingRunResult> {
     target_type: 'products_batch',
     target_id: null,
     target_label: `등록 자료 생성 ${prepared}개 완료`,
-    details: { total: products.length, prepared, failed, ran_at: ranAt },
+    details: { total: products.length, prepared, failed, blocked, ran_at: ranAt },
   });
 
   return { prepared, failed, ran_at: ranAt };

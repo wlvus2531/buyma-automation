@@ -1,25 +1,17 @@
 /**
  * GET  /api/translation/run  — Vercel Cron (매일 21:00 UTC = 06:00 JST)
- * POST /api/translation/run  — 수동 트리거
+ * POST /api/translation/run  — 수동 트리거 (앱 내 버튼)
+ *
+ * 인증: GET은 Authorization: Bearer {CRON_SECRET} 필수 (프로덕션)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeCron, cronUnauthorized } from '@/lib/cron-auth';
 import { runDailyTranslation } from '@/lib/translation-engine';
 
 export const maxDuration = 120;
 
-function authorize(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const auth = req.headers.get('authorization');
-  return auth === `Bearer ${secret}`;
-}
-
-export async function GET(req: NextRequest) {
-  if (!authorize(req)) {
-    return NextResponse.json({ error: '인증 실패' }, { status: 401 });
-  }
-
+async function handleRun() {
   try {
     const result = await runDailyTranslation();
     return NextResponse.json({
@@ -37,6 +29,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
-  return GET(req);
+export async function GET(req: NextRequest) {
+  if (!authorizeCron(req)) return cronUnauthorized();
+  return handleRun();
+}
+
+// POST = UI 수동 트리거. 앱 레벨 인증 도입 전까지 개방 — cron(GET)만 시크릿 강제
+export async function POST() {
+  return handleRun();
 }

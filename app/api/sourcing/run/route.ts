@@ -1,28 +1,17 @@
 /**
  * GET  /api/sourcing/run  — Vercel Cron (매일 19:00 UTC = 04:00 JST)
- * POST /api/sourcing/run  — 수동 트리거 (테스트용)
+ * POST /api/sourcing/run  — 수동 트리거 (앱 내 버튼)
  *
- * 인증: Authorization: Bearer {CRON_SECRET}
+ * 인증: GET은 Authorization: Bearer {CRON_SECRET} 필수 (프로덕션)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeCron, cronUnauthorized } from '@/lib/cron-auth';
 import { runDailySourcing } from '@/lib/sourcing-engine';
 
 export const maxDuration = 120; // 2분 — Claude 3배치 순차 호출 대응
 
-function authorize(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // 미설정 시 개발환경으로 간주
-
-  const auth = req.headers.get('authorization');
-  return auth === `Bearer ${secret}`;
-}
-
-export async function GET(req: NextRequest) {
-  if (!authorize(req)) {
-    return NextResponse.json({ error: '인증 실패' }, { status: 401 });
-  }
-
+async function handleRun() {
   try {
     const result = await runDailySourcing();
     return NextResponse.json({
@@ -41,6 +30,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
-  return GET(req);
+export async function GET(req: NextRequest) {
+  if (!authorizeCron(req)) return cronUnauthorized();
+  return handleRun();
+}
+
+// POST = UI 수동 트리거. 앱 레벨 인증 도입 전까지 개방 — cron(GET)만 시크릿 강제
+export async function POST() {
+  return handleRun();
 }
