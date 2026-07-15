@@ -10,3 +10,5 @@ export async function GET() {
     vercelEnv: process.env.VERCEL_ENV ?? null,
   });
 }
+
+// redeploy marker: 1784157451
