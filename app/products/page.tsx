@@ -613,11 +613,18 @@ export default function ProductsPage() {
     }));
 
     // API
-    await fetch("/api/products", {
+    const res = await fetch("/api/products", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, action, reason }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      // 롤백: optimistic update 되돌리기
+      setProducts((prev) => prev.map((p) => p.id === id ? product : p));
+      setToast({ msg: `✕ 저장 실패: ${data.error ?? res.statusText}` });
+      return;
+    }
 
     // Undo 토스트
     if (action === "select" || action === "skip") {
