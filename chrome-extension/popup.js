@@ -22,9 +22,29 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 // ── 초기화
 (async function init() {
-  const result = await chrome.storage.local.get(['apiUrl']);
+  const result = await chrome.storage.local.get(['apiUrl', 'collectorKey']);
   const apiUrl = result.apiUrl || DEFAULT_API;
   apiInput.value = apiUrl;
+
+  // 수집기 키
+  const keyInput = document.getElementById('collector-key-input');
+  const keySaveMsg = document.getElementById('key-save-msg');
+  if (keyInput) {
+    keyInput.value = result.collectorKey || '';
+    let keyTimer;
+    keyInput.addEventListener('input', () => {
+      clearTimeout(keyTimer);
+      keyTimer = setTimeout(() => {
+        chrome.runtime.sendMessage({ type: 'SAVE_CONFIG', config: { collectorKey: keyInput.value.trim() } }, () => {
+          keySaveMsg.style.display = 'block';
+          setTimeout(() => (keySaveMsg.style.display = 'none'), 2000);
+        });
+      }, 800);
+    });
+  }
+
+  // 리서치 수집
+  initResearchTab();
   dashBtn.href    = `${apiUrl}/monitor`;
   registerBtn.href = `${apiUrl}/register`;
 
@@ -99,6 +119,73 @@ function renderAutofillList(products) {
       </div>
     </div>
   `).join('');
+}
+
+// ── 리서치 탭 (V4 P1)
+function initResearchTab() {
+  const startBtn = document.getElementById('research-start-btn');
+  const stopBtn = document.getElementById('research-stop-btn');
+  const statusEl = document.getElementById('research-status');
+  const resultsEl = document.getElementById('research-results');
+  if (!startBtn) return;
+
+  let pollTimer = null;
+
+  function renderStatus(s) {
+    if (!s) return;
+    if (s.running) {
+      startBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
+      statusEl.textContent = `수집 중 ${s.done}/${s.total} — ${s.current || '...'}`;
+    } else {
+      startBtn.style.display = 'block';
+      stopBtn.style.display = 'none';
+      statusEl.textContent = s.results?.length
+        ? `완료: 미션 ${s.results.length}개`
+        : '대기 중';
+      if (pollTimer && !s.running) { clearInterval(pollTimer); pollTimer = null; }
+    }
+    if (s.results?.length) {
+      resultsEl.innerHTML = s.results.map(r => `
+        <div class="alert-item" style="border-color:${r.error ? '#fca5a5' : '#bbf7d0'};">
+          <div class="aname" style="color:${r.error ? '#991b1b' : '#166534'};">${esc(r.label)}</div>
+          <div class="adetail">${r.error ? esc(r.error) : `수집 ${r.saved}개${r.discarded ? ` · 필터 제외 ${r.discarded}` : ''}`}</div>
+        </div>
+      `).join('');
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => {
+      chrome.runtime.sendMessage({ type: 'RESEARCH_STATUS' }, renderStatus);
+    }, 1500);
+  }
+
+  startBtn.addEventListener('click', () => {
+    statusEl.textContent = '시작 중...';
+    chrome.runtime.sendMessage({ type: 'RESEARCH_START' }, res => {
+      if (!res?.ok) {
+        statusEl.textContent = `✕ ${res?.error || '시작 실패'}`;
+        return;
+      }
+      startPolling();
+    });
+  });
+
+  stopBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'RESEARCH_STOP' }, () => {
+      statusEl.textContent = '중지됨';
+      startBtn.style.display = 'block';
+      stopBtn.style.display = 'none';
+    });
+  });
+
+  // 열 때 현재 상태 반영
+  chrome.runtime.sendMessage({ type: 'RESEARCH_STATUS' }, s => {
+    renderStatus(s);
+    if (s?.running) startPolling();
+  });
 }
 
 function setStatus(ok, text) {

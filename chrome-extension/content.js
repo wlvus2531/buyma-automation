@@ -77,7 +77,17 @@
       const ratingEl = document.querySelector('.seller-rating, [class*="rating"], [class*="stars"]');
       const sellerRating = ratingEl ? parsePrice(ratingEl.textContent) : null;
 
+      // 찜 수 + 조회수 (상품 페이지 — V4 리서치)
+      const wishCount = parsePrice(textOf(document.querySelector(
+        '[class*="fav_count"], [class*="favorite"], [class*="wish"], .js-fav-count, [class*="hoshii"]'
+      )));
+      const accessCount = parsePrice(textOf(document.querySelector(
+        '[class*="access"], [class*="view_count"], [class*="pv"]'
+      )));
+
       return {
+        wish_count: wishCount,
+        access_count: accessCount,
         buyma_item_id: itemId,
         buyma_url: url,
         item_name: name,
@@ -167,7 +177,13 @@
 
         const soldOut = !!el.querySelector('[class*="soldout"], [class*="sold-out"]');
 
+        // 찜(ほしいもの/お気に入り) 수 — 목록 카드에 노출되는 경우 (V4 리서치)
+        const wishCount = parsePrice(textOf(el.querySelector(
+          '[class*="fav"], [class*="wish"], [class*="hoshii"], [class*="like"]'
+        )));
+
         return {
+          wish_count: wishCount,
           buyma_item_id: itemId,
           buyma_url: href || null,
           item_name: name,

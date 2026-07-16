@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BUYMA 운영 자동화",
-  "version": "2.0.0",
-  "description": "바이마 경쟁자 가격 모니터링 + 등록 폼 자동 입력 — buyma-automation 시스템 연동",
+  "version": "4.1.0",
+  "description": "바이마 리서치 수집기 + 경쟁자 가격 모니터링 + 등록 폼 자동 입력 — buyma-automation v4 연동",
   "permissions": ["storage", "notifications", "alarms"],
   "host_permissions": [
     "https://www.buyma.com/*",
