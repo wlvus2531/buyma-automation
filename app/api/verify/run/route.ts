@@ -31,7 +31,7 @@ async function handle(limit: number) {
 
 export async function GET(req: NextRequest) {
   if (!authorizeCron(req)) return cronUnauthorized();
-  return handle(15);
+  return handle(25);
 }
 
 export async function POST(req: NextRequest) {

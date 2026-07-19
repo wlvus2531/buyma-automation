@@ -5,8 +5,20 @@
       "schedule": "30 18 * * *"
     },
     {
+      "path": "/api/research/run",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/research/run",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/verify/run",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/verify/run",
+      "schedule": "30 9 * * *"
     },
     {
       "path": "/api/scraper/run",
