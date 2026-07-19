@@ -214,12 +214,13 @@ export async function runEnrichment(
   opts: { limit?: number } = {}
 ): Promise<{ enriched: number; errors: string[] }> {
   const limit = opts.limit ?? 15;
+  // 인기순 상위(rank 낮음) 우선 — 찜/조회가 실제로 붙어있을 확률이 높은 순서
   const { data: toEnrich } = await supabase
     .from('buyma_candidates')
     .select('id, buyma_url')
     .eq('status', 'collected')
     .is('wish_count', null)
-    .order('listed_date', { ascending: false, nullsFirst: false })
+    .order('rank_position', { ascending: true, nullsFirst: false })
     .limit(limit);
 
   const out = { enriched: 0, errors: [] as string[] };

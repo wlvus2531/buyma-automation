@@ -36,15 +36,30 @@ export async function GET(req: NextRequest) {
   const { count: withBrand } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).not('brand', 'is', null);
   const { count: discardedCnt } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).eq('status', 'discarded');
 
+  // 찜/조회 분포 (enriched 이상)
+  const { data: enrichedRows } = await supabase
+    .from('buyma_candidates')
+    .select('wish_count, access_count, listed_date, status')
+    .not('wish_count', 'is', null)
+    .limit(500);
+  const demandMet = (enrichedRows ?? []).filter(
+    (r) => (r.wish_count ?? 0) >= 3 || (r.access_count ?? 0) >= 100
+  ).length;
+  const statusDist: Record<string, number> = {};
+  const { data: allStatus } = await supabase.from('buyma_candidates').select('status').limit(2000);
+  for (const r of allStatus ?? []) statusDist[r.status] = (statusDist[r.status] ?? 0) + 1;
+
   const { data: samples } = await supabase
     .from('buyma_candidates')
-    .select('buyma_item_id, name_jp, brand, price_jpy, wish_count, listed_date, seller_name, rank_position, image_url')
-    .order('created_at', { ascending: false })
-    .limit(5);
+    .select('buyma_item_id, name_jp, brand, price_jpy, wish_count, access_count, listed_date, seller_name, rank_position, status')
+    .not('wish_count', 'is', null)
+    .order('wish_count', { ascending: false })
+    .limit(8);
 
   return NextResponse.json({
     total, with_listed_date: withDate, with_wish_count: withWish,
     with_price: withPrice, with_brand: withBrand, discarded: discardedCnt,
+    demand_met: demandMet, status_dist: statusDist,
     samples,
   });
 }
