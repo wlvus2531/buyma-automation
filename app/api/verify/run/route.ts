@@ -38,6 +38,41 @@ export async function POST(req: NextRequest) {
   if (!authorizeCollector(req)) return cronUnauthorized();
   const body = await req.json().catch(() => ({}));
 
+  // 승격 상품 근거 새로고침 — 문의수/최근판매(후기)/찜/조회 최신화
+  if (body.action === 'refresh_evidence') {
+    const supabase = getAdminSupabase();
+    const { fetchBuymaHtml, parseItemPage, sleep } = await import('@/lib/buyma-scraper');
+    const { data: prods } = await supabase
+      .from('products')
+      .select('id, evidence')
+      .not('candidate_id', 'is', null)
+      .not('evidence', 'is', null)
+      .limit(body.limit ?? 20);
+    let refreshed = 0;
+    for (const p of prods ?? []) {
+      const ev = (p.evidence ?? {}) as Record<string, unknown>;
+      const url = ev.buyma_url as string | undefined;
+      if (!url) continue;
+      try {
+        const d = parseItemPage(await fetchBuymaHtml(url));
+        await supabase.from('products').update({
+          evidence: {
+            ...ev,
+            wish_count: d.wish_count ?? ev.wish_count,
+            access_count: d.access_count ?? ev.access_count,
+            listed_date: d.listed_date ?? ev.listed_date,
+            inquiry_count: d.inquiry_count,
+            latest_review_date: d.latest_review_date,
+            review_count: d.review_count,
+          },
+        }).eq('id', p.id);
+        refreshed++;
+        await sleep(1500);
+      } catch { /* 개별 실패 무시 */ }
+    }
+    return NextResponse.json({ ok: true, refreshed });
+  }
+
   // 레거시(AI 환각 소싱) 상품 전체 정리 — 실제 바이마 등록 완료분만 보호
   if (body.action === 'purge_legacy') {
     const supabase = getAdminSupabase();

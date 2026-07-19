@@ -187,9 +187,15 @@ export async function runVerification(
         continue;
       }
 
+      const detail = ((c.raw as Record<string, unknown> | null)?.item_detail ?? {}) as {
+        inquiry_count?: number | null; latest_review_date?: string | null; review_count?: number | null;
+      };
       const evidence = {
         source_title: best.title,
         cost_ratio: costRatio,
+        inquiry_count: detail.inquiry_count ?? null,
+        latest_review_date: detail.latest_review_date ?? null,
+        review_count: detail.review_count ?? null,
         wish_count: c.wish_count,
         access_count: c.access_count,
         listed_date: c.listed_date,

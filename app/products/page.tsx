@@ -34,6 +34,9 @@ interface Product {
 interface Evidence {
   source_title?: string;
   cost_ratio?: number;
+  inquiry_count?: number | null;
+  latest_review_date?: string | null;
+  review_count?: number | null;
   wish_count?: number | null;
   access_count?: number | null;
   listed_date?: string | null;
@@ -65,6 +68,11 @@ function EvidenceBlock({ p, compact = false }: { p: Product; compact?: boolean }
         {ev.wish_count != null && <span>❤️ 찜 {ev.wish_count.toLocaleString()}</span>}
         {ev.access_count != null && <span>👁 조회 {ev.access_count.toLocaleString()}</span>}
         {days != null && <span>📅 등록 {days}일차</span>}
+        {ev.inquiry_count != null && ev.inquiry_count > 0 && <span>💬 문의 {ev.inquiry_count}건</span>}
+        {ev.latest_review_date && (() => {
+          const rd = daysSince(ev.latest_review_date);
+          return <span className="text-emerald-600">🛒 최근판매 {rd != null ? `${rd}일 전` : ev.latest_review_date}{ev.review_count ? ` (후기 ${ev.review_count})` : ""}</span>;
+        })()}
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-stone-500">
         {ev.buyma_price_jpy && <span>경쟁가 ¥{ev.buyma_price_jpy.toLocaleString()}</span>}

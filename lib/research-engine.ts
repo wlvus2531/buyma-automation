@@ -217,7 +217,7 @@ export async function runEnrichment(
   // 인기순 상위(rank 낮음) 우선 + 정상 수집분(name_jp 있음)만
   const { data: toEnrich } = await supabase
     .from('buyma_candidates')
-    .select('id, buyma_url')
+    .select('id, buyma_url, raw')
     .eq('status', 'collected')
     .is('wish_count', null)
     .not('name_jp', 'is', null)
@@ -233,7 +233,16 @@ export async function runEnrichment(
         wish_count: d.wish_count ?? 0,
         access_count: d.access_count,
         listed_date: d.listed_date ?? undefined,
+        inquiry_recent: (d.inquiry_count ?? 0) > 0,
         status: 'enriched',
+        raw: {
+          ...((c.raw as Record<string, unknown>) ?? {}),
+          item_detail: {
+            inquiry_count: d.inquiry_count,
+            latest_review_date: d.latest_review_date,
+            review_count: d.review_count,
+          },
+        },
         last_seen_at: new Date().toISOString(),
       }).eq('id', c.id);
       out.enriched++;

@@ -84,31 +84,53 @@ export function parseListPage(html: string): BuymaListItem[] {
 }
 
 export interface BuymaItemDetail {
-  access_count: number | null;   // 조회수 (어제까지 누계)
-  wish_count: number | null;     // 찜(お気に入り) 수
-  listed_date: string | null;    // 등록일 (상세 이미지 URL의 YYMMDD)
+  access_count: number | null;     // 조회수 (어제까지 누계)
+  wish_count: number | null;       // 찜(お気に入り) 수
+  listed_date: string | null;      // 등록일 (kokaidate 우선, 폴백: 이미지 URL YYMMDD)
+  inquiry_count: number | null;    // 문의(お問い合わせ) 수
+  latest_review_date: string | null; // 최근 구매후기 날짜 = 최근 실판매 증거
+  review_count: number | null;     // 후기 수
 }
 
-/** 상품 상세 페이지 파싱 — 찜/조회수/등록일 */
+/** 상품 상세 페이지 파싱 — 찜/조회수/등록일/문의수/최근판매(후기) */
 export function parseItemPage(html: string): BuymaItemDetail {
   const access = html.match(/class="ac_count">([\d,]+)</)?.[1] ?? null;
   const wish = html.match(/class="fav_count">([\d,]+)/)?.[1] ?? null;
 
-  // 상세 페이지 본문 이미지에서 등록일 추출 (리사이즈 210px 썸네일 제외한 원본 경로도 동일 날짜)
-  const dateM = html.match(/imgdata\/item\/(\d{6})\/0?\d+\//);
+  // 등록일 ①: track_item_json 메타의 kokaidate (정확한 공개일시)
   let listedDate: string | null = null;
-  if (dateM) {
-    const [yy, mm, dd] = [dateM[1].slice(0, 2), dateM[1].slice(2, 4), dateM[1].slice(4, 6)];
-    const year = 2000 + parseInt(yy, 10);
-    if (year >= 2005 && +mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31) {
-      listedDate = `${year}-${mm}-${dd}`;
+  const kokai = html.match(/kokaidate&quot;:&quot;(\d{4}-\d{2}-\d{2})T/) ||
+                html.match(/"kokaidate":"(\d{4}-\d{2}-\d{2})T/);
+  if (kokai) listedDate = kokai[1];
+
+  // 등록일 ②(폴백): 이미지 URL의 YYMMDD
+  if (!listedDate) {
+    const dateM = html.match(/imgdata\/item\/(\d{6})\/0?\d+\//);
+    if (dateM) {
+      const [yy, mm, dd] = [dateM[1].slice(0, 2), dateM[1].slice(2, 4), dateM[1].slice(4, 6)];
+      const year = 2000 + parseInt(yy, 10);
+      if (year >= 2005 && +mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31) {
+        listedDate = `${year}-${mm}-${dd}`;
+      }
     }
   }
+
+  // 문의 수: 탭 배지 <p id="tabmenu_inqcnt">28</p>
+  const inq = html.match(/id="tabmenu_inqcnt">([\d,]+)</)?.[1] ?? null;
+
+  // 최근 판매 증거: JSON-LD review의 datePublished 최댓값
+  const reviewDates = [...html.matchAll(/"datePublished":"(\d{4}\/\d{2}\/\d{2})"/g)]
+    .map((m) => m[1].replace(/\//g, '-'))
+    .sort();
+  const latestReview = reviewDates.length ? reviewDates[reviewDates.length - 1] : null;
 
   return {
     access_count: access ? parseInt(access.replace(/,/g, ''), 10) : null,
     wish_count: wish ? parseInt(wish.replace(/,/g, ''), 10) : null,
     listed_date: listedDate,
+    inquiry_count: inq ? parseInt(inq.replace(/,/g, ''), 10) : null,
+    latest_review_date: latestReview,
+    review_count: reviewDates.length || null,
   };
 }
 
