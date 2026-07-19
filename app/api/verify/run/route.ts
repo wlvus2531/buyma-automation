@@ -38,19 +38,21 @@ export async function POST(req: NextRequest) {
   if (!authorizeCollector(req)) return cronUnauthorized();
   const body = await req.json().catch(() => ({}));
 
-  // 레거시(AI 환각 소싱) 미결정 상품 정리 — dry:true면 개수만 반환
+  // 레거시(AI 환각 소싱) 상품 전체 정리 — 실제 바이마 등록 완료분만 보호
   if (body.action === 'purge_legacy') {
     const supabase = getAdminSupabase();
     const { data: legacy } = await supabase
       .from('products')
       .select('id')
       .is('candidate_id', null)
-      .is('decided_at', null)
-      .is('listing_status', null)
-      .eq('status', 'sourcing');
+      .is('listed_at', null)
+      .is('buyma_listing_url', null);
     const ids = (legacy ?? []).map((r) => r.id);
     if (body.dry) return NextResponse.json({ ok: true, dry: true, count: ids.length });
-    if (ids.length) await supabase.from('products').delete().in('id', ids);
+    // 1000건 단위 분할 삭제
+    for (let i = 0; i < ids.length; i += 500) {
+      await supabase.from('products').delete().in('id', ids.slice(i, i + 500));
+    }
     return NextResponse.json({ ok: true, removed: ids.length });
   }
 
