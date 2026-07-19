@@ -58,6 +58,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
 
+    // 오늘 미션 삭제 후 재생성 (입구 URL 로직 변경 시 사용)
+    if (body.action === 'regenerate') {
+      const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+      await supabase.from('research_missions').delete().eq('mission_date', today);
+      const result = await generateDailyMissions(supabase);
+      return NextResponse.json({ ok: true, ...result });
+    }
+
     // 빈 데이터 정리 (확장 초기 수집 잔여물 — name_jp 없는 행 삭제)
     if (body.action === 'cleanup') {
       const { data: junk } = await supabase
