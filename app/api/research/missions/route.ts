@@ -8,8 +8,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { generateDailyMissions } from '@/lib/research-engine';
+import { generateDailyMissions, runResearchCollection } from '@/lib/research-engine';
 import { authorizeCollector } from '@/lib/collector-auth';
+
+export const maxDuration = 120; // 서버사이드 수집 (미션 6개 + 보강 12개, 간격 포함 ~60초)
 
 function getAdminSupabase() {
   return createClient(
@@ -46,6 +48,13 @@ export async function POST(req: NextRequest) {
 
     if (body.action === 'generate') {
       const result = await generateDailyMissions(supabase);
+      return NextResponse.json({ ok: true, ...result });
+    }
+
+    // 서버사이드 직접 수집 (v4 — 확장 불필요)
+    if (body.action === 'collect') {
+      await generateDailyMissions(supabase); // 오늘 미션 없으면 생성
+      const result = await runResearchCollection(supabase);
       return NextResponse.json({ ok: true, ...result });
     }
 

@@ -53,6 +53,7 @@ interface ReportItem {
   buyma_item_id: string;
   buyma_url?: string;
   name_jp?: string;
+  item_name?: string; // 확장 content.js가 보내는 필드명
   brand?: string;
   price_jpy?: number;
   wish_count?: number;
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
       const row = {
         buyma_item_id: String(it.buyma_item_id),
         buyma_url: it.buyma_url ?? null,
-        name_jp: it.name_jp ?? null,
+        name_jp: it.name_jp ?? it.item_name ?? null,
         brand: it.brand ?? null,
         price_jpy: it.price_jpy ?? null,
         wish_count: it.wish_count ?? null,

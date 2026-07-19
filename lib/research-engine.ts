@@ -33,11 +33,9 @@ const ENTRANCES: Entrance[] = [
   { label: '뷰티/코스메틱',       categoryId: '3300', keyword: '韓国' },
 ];
 
-/** 인기순 목록 URL 생성 (한국발 필터) */
+/** 인기순 목록 URL 생성 (한국발 필터) — O1=인기순 (실측 검증 완료) */
 function buildEntryUrl(e: Entrance, page: number): string {
-  // 바이마 검색: /r/{keyword}/ + 카테고리/정렬 파라미터 (수집기 실측으로 보정 예정)
-  const base = `https://www.buyma.com/r/-C${e.categoryId ?? ''}O2/${encodeURIComponent(e.keyword)}`;
-  // O2 = 인기순 정렬 코드 (검증 대상 V7)
+  const base = `https://www.buyma.com/r/-C${e.categoryId ?? ''}O1/${encodeURIComponent(e.keyword)}`;
   return page > 1 ? `${base}_${page}/` : `${base}/`;
 }
 
@@ -97,6 +95,135 @@ export async function generateDailyMissions(supabase: SupabaseClient): Promise<M
   });
 
   return { created: rows.length, date: today, labels: picked.map((e) => e.label) };
+}
+
+// ────────────────────────────────────────────────
+// 서버사이드 수집 (v4 P1 — 확장 없이 Vercel에서 직접 수집)
+// ────────────────────────────────────────────────
+
+import { fetchBuymaHtml, parseListPage, parseItemPage, sleep } from './buyma-scraper';
+import { loadBrandRules, checkBrand } from './brand-rules';
+
+export interface CollectionRunResult {
+  missions_run: number;
+  saved: number;
+  discarded: number;
+  enriched: number;
+  errors: string[];
+}
+
+/**
+ * 오늘의 pending 미션을 서버에서 직접 수집 실행
+ * - 미션당 3~4초 간격 (rate limit 배려)
+ * - 하드 필터 즉시 적용, 프리미엄 쇼퍼 상품 제외(방법론)
+ * - 수집 후 유망 후보 상위 N개 상세 페이지에서 찜/조회수 보강
+ */
+export async function runResearchCollection(
+  supabase: SupabaseClient,
+  opts: { enrichLimit?: number } = {}
+): Promise<CollectionRunResult> {
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const enrichLimit = opts.enrichLimit ?? 12;
+
+  const { data: missions } = await supabase
+    .from('research_missions')
+    .select('id, label, entry_url, method')
+    .eq('mission_date', today)
+    .in('status', ['pending', 'failed'])
+    .order('priority', { ascending: false });
+
+  const result: CollectionRunResult = { missions_run: 0, saved: 0, discarded: 0, enriched: 0, errors: [] };
+  if (!missions?.length) return result;
+
+  const rules = await loadBrandRules(supabase);
+  const now = new Date().toISOString();
+
+  for (const mission of missions) {
+    try {
+      await supabase.from('research_missions').update({ status: 'running' }).eq('id', mission.id);
+      const html = await fetchBuymaHtml(mission.entry_url);
+      const items = parseListPage(html);
+
+      let saved = 0;
+      for (const it of items) {
+        // 방법론: 프리미엄 쇼퍼 상품 제외
+        if (it.seller_type === 'premium') { result.discarded++; continue; }
+        const brandCheck = checkBrand(it.brand, rules);
+        const listedDate = parseListedDateFromImageUrl(it.image_url);
+
+        const { error } = await supabase.from('buyma_candidates').upsert({
+          buyma_item_id: it.buyma_item_id,
+          buyma_url: it.buyma_url,
+          name_jp: it.name_jp,
+          brand: it.brand,
+          price_jpy: it.price_jpy,
+          listed_date: listedDate,
+          seller_id: it.seller_id,
+          seller_name: it.seller_name,
+          seller_type: it.seller_type,
+          rank_position: it.rank_position,
+          image_url: it.image_url,
+          mission_id: mission.id,
+          method: mission.method,
+          status: brandCheck.allowed ? 'collected' : 'discarded',
+          raw: { category: it.category },
+          last_seen_at: now,
+        }, { onConflict: 'buyma_item_id' });
+
+        if (!error) {
+          if (brandCheck.allowed) { saved++; result.saved++; }
+          else result.discarded++;
+        }
+      }
+
+      await supabase.from('research_missions')
+        .update({ status: 'done', items_collected: saved, completed_at: new Date().toISOString() })
+        .eq('id', mission.id);
+      result.missions_run++;
+      await sleep(3000 + Math.random() * 1000);
+    } catch (e) {
+      result.errors.push(`${mission.label}: ${e instanceof Error ? e.message : e}`);
+      await supabase.from('research_missions').update({ status: 'failed' }).eq('id', mission.id);
+    }
+  }
+
+  // 보강: 찜/조회수 없는 최근 후보 상위 N개 상세 수집
+  const { data: toEnrich } = await supabase
+    .from('buyma_candidates')
+    .select('id, buyma_url')
+    .eq('status', 'collected')
+    .is('wish_count', null)
+    .order('listed_date', { ascending: false, nullsFirst: false })
+    .limit(enrichLimit);
+
+  for (const c of toEnrich ?? []) {
+    try {
+      const html = await fetchBuymaHtml(c.buyma_url);
+      const d = parseItemPage(html);
+      await supabase.from('buyma_candidates').update({
+        wish_count: d.wish_count,
+        access_count: d.access_count,
+        listed_date: d.listed_date ?? undefined,
+        status: 'enriched',
+        last_seen_at: new Date().toISOString(),
+      }).eq('id', c.id);
+      result.enriched++;
+      await sleep(2000 + Math.random() * 1000);
+    } catch (e) {
+      result.errors.push(`enrich ${c.id}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  await supabase.from('activity_feed').insert({
+    user_id: null,
+    actor_label: '리서치 수집기',
+    action_type: 'research_collection_run',
+    target_type: 'research_batch',
+    target_label: `서버 수집 ${result.missions_run}개 미션 · 후보 ${result.saved}개`,
+    details: result as unknown as Record<string, unknown>,
+  });
+
+  return result;
 }
 
 /**
