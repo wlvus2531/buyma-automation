@@ -120,20 +120,24 @@ export interface CollectionRunResult {
  */
 export async function runResearchCollection(
   supabase: SupabaseClient,
-  opts: { enrichLimit?: number } = {}
-): Promise<CollectionRunResult> {
+  opts: { missionLimit?: number } = {}
+): Promise<CollectionRunResult & { remaining: number }> {
   const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const enrichLimit = opts.enrichLimit ?? 12;
+  const missionLimit = opts.missionLimit ?? 3; // 타임아웃 방지: 호출당 최대 3개 미션
 
-  const { data: missions } = await supabase
+  const { data: allPending } = await supabase
     .from('research_missions')
     .select('id, label, entry_url, method')
     .eq('mission_date', today)
     .in('status', ['pending', 'failed'])
     .order('priority', { ascending: false });
 
-  const result: CollectionRunResult = { missions_run: 0, saved: 0, discarded: 0, enriched: 0, errors: [] };
-  if (!missions?.length) return result;
+  const result: CollectionRunResult & { remaining: number } = {
+    missions_run: 0, saved: 0, discarded: 0, enriched: 0, errors: [], remaining: 0,
+  };
+  const missions = (allPending ?? []).slice(0, missionLimit);
+  result.remaining = Math.max(0, (allPending?.length ?? 0) - missions.length);
+  if (!missions.length) return result;
 
   const rules = await loadBrandRules(supabase);
   const now = new Date().toISOString();
@@ -144,73 +148,49 @@ export async function runResearchCollection(
       const html = await fetchBuymaHtml(mission.entry_url);
       const items = parseListPage(html);
 
-      let saved = 0;
-      for (const it of items) {
-        // 방법론: 프리미엄 쇼퍼 상품 제외
-        if (it.seller_type === 'premium') { result.discarded++; continue; }
-        const brandCheck = checkBrand(it.brand, rules);
-        const listedDate = parseListedDateFromImageUrl(it.image_url);
+      // 배치 upsert (개별 호출 대비 ~50배 빠름)
+      const rows = items
+        .filter((it) => it.seller_type !== 'premium') // 방법론: 프리미엄 쇼퍼 제외
+        .map((it) => {
+          const brandCheck = checkBrand(it.brand, rules);
+          if (!brandCheck.allowed) result.discarded++;
+          return {
+            buyma_item_id: it.buyma_item_id,
+            buyma_url: it.buyma_url,
+            name_jp: it.name_jp,
+            brand: it.brand,
+            price_jpy: it.price_jpy,
+            listed_date: parseListedDateFromImageUrl(it.image_url),
+            seller_id: it.seller_id,
+            seller_name: it.seller_name,
+            seller_type: it.seller_type,
+            rank_position: it.rank_position,
+            image_url: it.image_url,
+            mission_id: mission.id,
+            method: mission.method,
+            status: brandCheck.allowed ? 'collected' : 'discarded',
+            raw: { category: it.category },
+            last_seen_at: now,
+          };
+        });
+      result.discarded += items.length - rows.length; // premium 제외분
 
-        const { error } = await supabase.from('buyma_candidates').upsert({
-          buyma_item_id: it.buyma_item_id,
-          buyma_url: it.buyma_url,
-          name_jp: it.name_jp,
-          brand: it.brand,
-          price_jpy: it.price_jpy,
-          listed_date: listedDate,
-          seller_id: it.seller_id,
-          seller_name: it.seller_name,
-          seller_type: it.seller_type,
-          rank_position: it.rank_position,
-          image_url: it.image_url,
-          mission_id: mission.id,
-          method: mission.method,
-          status: brandCheck.allowed ? 'collected' : 'discarded',
-          raw: { category: it.category },
-          last_seen_at: now,
-        }, { onConflict: 'buyma_item_id' });
+      const { error } = await supabase
+        .from('buyma_candidates')
+        .upsert(rows, { onConflict: 'buyma_item_id' });
+      if (error) throw new Error(error.message);
 
-        if (!error) {
-          if (brandCheck.allowed) { saved++; result.saved++; }
-          else result.discarded++;
-        }
-      }
+      const saved = rows.filter((r) => r.status === 'collected').length;
+      result.saved += saved;
 
       await supabase.from('research_missions')
         .update({ status: 'done', items_collected: saved, completed_at: new Date().toISOString() })
         .eq('id', mission.id);
       result.missions_run++;
-      await sleep(3000 + Math.random() * 1000);
+      await sleep(2000 + Math.random() * 1000);
     } catch (e) {
       result.errors.push(`${mission.label}: ${e instanceof Error ? e.message : e}`);
       await supabase.from('research_missions').update({ status: 'failed' }).eq('id', mission.id);
-    }
-  }
-
-  // 보강: 찜/조회수 없는 최근 후보 상위 N개 상세 수집
-  const { data: toEnrich } = await supabase
-    .from('buyma_candidates')
-    .select('id, buyma_url')
-    .eq('status', 'collected')
-    .is('wish_count', null)
-    .order('listed_date', { ascending: false, nullsFirst: false })
-    .limit(enrichLimit);
-
-  for (const c of toEnrich ?? []) {
-    try {
-      const html = await fetchBuymaHtml(c.buyma_url);
-      const d = parseItemPage(html);
-      await supabase.from('buyma_candidates').update({
-        wish_count: d.wish_count,
-        access_count: d.access_count,
-        listed_date: d.listed_date ?? undefined,
-        status: 'enriched',
-        last_seen_at: new Date().toISOString(),
-      }).eq('id', c.id);
-      result.enriched++;
-      await sleep(2000 + Math.random() * 1000);
-    } catch (e) {
-      result.errors.push(`enrich ${c.id}: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -224,6 +204,43 @@ export async function runResearchCollection(
   });
 
   return result;
+}
+
+/**
+ * 보강: 찜/조회수 없는 후보 상세 페이지 수집 (별도 호출 — 타임아웃 분리)
+ */
+export async function runEnrichment(
+  supabase: SupabaseClient,
+  opts: { limit?: number } = {}
+): Promise<{ enriched: number; errors: string[] }> {
+  const limit = opts.limit ?? 15;
+  const { data: toEnrich } = await supabase
+    .from('buyma_candidates')
+    .select('id, buyma_url')
+    .eq('status', 'collected')
+    .is('wish_count', null)
+    .order('listed_date', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  const out = { enriched: 0, errors: [] as string[] };
+  for (const c of toEnrich ?? []) {
+    try {
+      const html = await fetchBuymaHtml(c.buyma_url);
+      const d = parseItemPage(html);
+      await supabase.from('buyma_candidates').update({
+        wish_count: d.wish_count ?? 0,
+        access_count: d.access_count,
+        listed_date: d.listed_date ?? undefined,
+        status: 'enriched',
+        last_seen_at: new Date().toISOString(),
+      }).eq('id', c.id);
+      out.enriched++;
+      await sleep(1500 + Math.random() * 1000);
+    } catch (e) {
+      out.errors.push(`${c.id}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  return out;
 }
 
 /**

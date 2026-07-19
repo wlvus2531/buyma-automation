@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { generateDailyMissions, runResearchCollection } from '@/lib/research-engine';
+import { generateDailyMissions, runResearchCollection, runEnrichment } from '@/lib/research-engine';
 import { authorizeCollector } from '@/lib/collector-auth';
 
 export const maxDuration = 120; // 서버사이드 수집 (미션 6개 + 보강 12개, 간격 포함 ~60초)
@@ -51,10 +51,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
 
-    // 서버사이드 직접 수집 (v4 — 확장 불필요)
+    // 서버사이드 직접 수집 (v4 — 확장 불필요). remaining > 0 이면 재호출 필요
     if (body.action === 'collect') {
       await generateDailyMissions(supabase); // 오늘 미션 없으면 생성
-      const result = await runResearchCollection(supabase);
+      const result = await runResearchCollection(supabase, { missionLimit: body.mission_limit ?? 3 });
+      return NextResponse.json({ ok: true, ...result });
+    }
+
+    // 찜/조회수 보강 (별도 호출)
+    if (body.action === 'enrich') {
+      const result = await runEnrichment(supabase, { limit: body.limit ?? 15 });
       return NextResponse.json({ ok: true, ...result });
     }
 
