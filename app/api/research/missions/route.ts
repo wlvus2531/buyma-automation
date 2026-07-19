@@ -58,6 +58,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ...result });
     }
 
+    // 빈 데이터 정리 (확장 초기 수집 잔여물 — name_jp 없는 행 삭제)
+    if (body.action === 'cleanup') {
+      const { data: junk } = await supabase
+        .from('buyma_candidates')
+        .select('id')
+        .is('name_jp', null)
+        .in('status', ['collected', 'enriched']);
+      const ids = (junk ?? []).map((r) => r.id);
+      if (ids.length) await supabase.from('buyma_candidates').delete().in('id', ids);
+      return NextResponse.json({ ok: true, deleted: ids.length });
+    }
+
     // 찜/조회수 보강 (별도 호출)
     if (body.action === 'enrich') {
       const result = await runEnrichment(supabase, { limit: body.limit ?? 15 });
