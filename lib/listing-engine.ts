@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { maybeRequestApprovalForListing } from './approval-rules';
 import { loadBrandRules, checkBrand } from './brand-rules';
+import { buildTitle, buildProductComment, buildSizeColorComment } from './listing-templates';
 
 function getAdminSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,7 +31,17 @@ interface ListingProduct {
 
 interface ListingData {
   title_jp: string;
-  description_jp: string;
+  description_jp: string;    // 상품 코멘트 (템플릿 + AI 특징 삽입 완성본)
+  size_comment_jp: string;  // 색·사이즈 보충 (템플릿 + AI 상세 삽입 완성본)
+  buyma_category: string;
+  listing_tags: string[];
+}
+
+// AI가 생성하는 가변 부분만 (고정 템플릿은 코드에서 조립)
+interface ListingAiParts {
+  title_core: string;   // 브랜드+상품타입+특징 (키워드 제외)
+  intro: string;        // 상품 특징 3~5행 (경어)
+  size_detail: string;  // 색/사이즈 설명
   buyma_category: string;
   listing_tags: string[];
 }
@@ -39,44 +50,49 @@ async function generateListing(
   client: Anthropic,
   product: ListingProduct
 ): Promise<ListingData> {
-  const prompt = `あなたはBUYMA出品の専門家です。以下の韓国商品情報から最適な出品データを日本語で生成してください。
+  const prompt = `あなたはBUYMA出品の専門家です。以下の韓国商品情報から出品データの「可変部分」だけを日本語で生成してください。定型文（お取引条件など）はシステム側で自動付与されるため不要です。
 
 商品名(韓国語): ${product.name_kr}
 商品名(日本語): ${product.name_jp}
 ブランド: ${product.brand ?? '不明'}
 仕入れ元: ${product.source_mall ?? '韓国ショッピングモール'}
-仕入原価: ₩${product.cost_krw.toLocaleString()}
-配送費: ₩${product.ship_krw.toLocaleString()}
 販売予定価格: ¥${product.list_price_jpy?.toLocaleString() ?? '未設定'}
-利益率: ${product.margin_pct ?? 0}%
 
 以下のJSON形式のみで回答してください（コードブロックなし）:
 {
-  "title_jp": "BUYMAタイトル(60字以内, ★含む, 関税込み/日本未入荷/韓国大人気などのキーワードを含む, ブランド名+商品タイプ+特徴の構造)",
-  "description_jp": "商品説明(日本語敬語。商品特徴3〜5行、素材・サイズ案内、ご注文後3〜7営業日以内に発送、関税込み明記、正規品保証。各セクションに絵文字使用。\\nで改行)",
-  "buyma_category": "BUYMAカテゴリ(例: レディース > トップス > Tシャツ)",
+  "title_core": "ブランド名+商品タイプ+特徴 (40字以内, ★などの記号は入れない。例: Matin Kim サイドジップ 2WAY ショルダーバッグ)",
+  "intro": "商品の魅力を伝える特徴紹介 3〜5行 (日本語敬語, 各行に絵文字1つ, \\nで改行, 韓国トレンド感を強調)",
+  "size_detail": "色・サイズに関する案内文 (日本語敬語, 展開カラーやサイズ選択の案内, 3〜5行, \\nで改行)",
+  "buyma_category": "BUYMAカテゴリ(例: レディース > バッグ > ショルダーバッグ)",
   "listing_tags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"]
 }`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2000,
+    max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const text = message.content[0].type === 'text' ? message.content[0].text : '';
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-  let parsed: ListingData;
+  let parts: ListingAiParts;
   try {
-    parsed = JSON.parse(cleaned);
+    parts = JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error(`파싱 실패: ${cleaned.slice(0, 200)}`);
-    parsed = JSON.parse(match[0]);
+    parts = JSON.parse(match[0]);
   }
 
-  return parsed;
+  // 고정 템플릿 + AI 가변부 조립
+  return {
+    title_jp: buildTitle(parts.title_core, { brand: product.brand }),
+    description_jp: buildProductComment(parts.intro),
+    size_comment_jp: buildSizeColorComment(parts.size_detail),
+    buyma_category: parts.buyma_category,
+    listing_tags: parts.listing_tags,
+  };
 }
 
 export interface ListingRunResult {
@@ -135,6 +151,7 @@ export async function runDailyListing(): Promise<ListingRunResult> {
         .update({
           title_jp: listing.title_jp,
           description_jp: listing.description_jp,
+          size_comment_jp: listing.size_comment_jp,
           buyma_category: listing.buyma_category,
           listing_tags: listing.listing_tags,
           listing_status: 'ready',

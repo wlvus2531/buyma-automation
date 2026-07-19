@@ -11,6 +11,7 @@ const PRIMARY_NAV = [
   { href: "/today",     label: "오늘 할 일",  emoji: "🏠" },
   { href: "/products",  label: "AI 상품",     emoji: "🤖" },
   { href: "/register",  label: "등록 워크플로우", emoji: "📦" },
+  { href: "/studio",    label: "썸네일 제작",  emoji: "🎨" },
   { href: "/orders",    label: "주문/발주",   emoji: "🛒" },
   { href: "/monitor",   label: "모니터링",    emoji: "🔔" },
   { href: "/cs",        label: "CS",          emoji: "💬" },
