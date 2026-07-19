@@ -25,7 +25,70 @@ interface Product {
   decided_at: string | null;
   source_url: string | null;
   thumbnail_url: string | null;
+  candidate_id: string | null;
+  evidence: Evidence | null;
   created_at: string;
+}
+
+// v4 실측 근거 (verify-engine이 승격 시 저장)
+interface Evidence {
+  source_title?: string;
+  cost_ratio?: number;
+  wish_count?: number | null;
+  access_count?: number | null;
+  listed_date?: string | null;
+  buyma_price_jpy?: number;
+  buyma_url?: string;
+  competitor_seller?: string | null;
+  source_whitelisted?: boolean;
+  margin_before?: number;
+  margin_after_refund?: number;
+  vat_refund_krw?: number;
+  method?: string;
+}
+
+/** 등록 경과일 */
+function daysSince(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null;
+  const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  return isNaN(d) ? null : d;
+}
+
+/** 근거 카드 — 그리드/큐 공용 (v4 P3) */
+function EvidenceBlock({ p, compact = false }: { p: Product; compact?: boolean }) {
+  const ev = p.evidence;
+  if (!ev) return null;
+  const days = daysSince(ev.listed_date);
+  return (
+    <div className={`rounded-xl bg-stone-50 ring-1 ring-stone-100 ${compact ? "p-2.5 text-[11px]" : "p-3 text-xs"} space-y-1.5`}>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 font-medium text-stone-700">
+        {ev.wish_count != null && <span>❤️ 찜 {ev.wish_count.toLocaleString()}</span>}
+        {ev.access_count != null && <span>👁 조회 {ev.access_count.toLocaleString()}</span>}
+        {days != null && <span>📅 등록 {days}일차</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-stone-500">
+        {ev.buyma_price_jpy && <span>경쟁가 ¥{ev.buyma_price_jpy.toLocaleString()}</span>}
+        {ev.margin_before != null && (
+          <span>
+            마진 {ev.margin_before}% → <b className="text-emerald-600">환급후 {ev.margin_after_refund}%</b>
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-stone-500">
+        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${ev.source_whitelisted ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>
+          {ev.source_whitelisted ? "✓ 신뢰 구매처" : "구매처 확인 필요"}
+        </span>
+        <span className="truncate max-w-[180px]" title={ev.source_title}>{ev.source_title}</span>
+      </div>
+      {ev.buyma_url && (
+        <a href={ev.buyma_url} target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-1 text-[10px] text-sky-600 hover:underline"
+           onClick={(e) => e.stopPropagation()}>
+          바이마 경쟁 상품 보기 →
+        </a>
+      )}
+    </div>
+  );
 }
 
 type PipelineStep = "sourcing" | "scraper" | "translation";
@@ -234,6 +297,15 @@ function ProductCard({
             </span>
           )}
         </div>
+
+        {/* v4 실측 근거 */}
+        <EvidenceBlock p={p} compact />
+
+        {p.candidate_id && (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-500 self-start">
+            📊 실측 소싱
+          </span>
+        )}
 
         <div className="flex gap-2 pt-2">
           {isSkipped ? (
@@ -471,6 +543,9 @@ function QueueMode({
               </span>
             )}
           </div>
+
+          {/* v4 실측 근거 — 결정의 핵심 정보 */}
+          <EvidenceBlock p={current} />
 
           {/* 액션 버튼 */}
           <div className="flex gap-3 mt-auto pt-4">

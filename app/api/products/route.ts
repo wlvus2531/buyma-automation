@@ -11,7 +11,7 @@ export async function GET() {
   const supabase = getAdminSupabase();
   const { data, error } = await supabase
     .from('products')
-    .select('id, name_kr, name_jp, brand, source_mall, cost_krw, ship_krw, list_price_jpy, margin_pct, ai_score, status, listing_status, skip_reason, decided_at, source_url, thumbnail_url, created_at')
+    .select('id, name_kr, name_jp, brand, source_mall, cost_krw, ship_krw, list_price_jpy, margin_pct, ai_score, status, listing_status, skip_reason, decided_at, source_url, thumbnail_url, candidate_id, evidence, created_at')
     .order('ai_score', { ascending: false })
     .limit(100);
 
