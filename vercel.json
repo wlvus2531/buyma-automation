@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/research/run",
+      "schedule": "30 18 * * *"
+    },
+    {
       "path": "/api/sourcing/run",
       "schedule": "0 19 * * *"
     },

@@ -129,7 +129,7 @@ export async function runResearchCollection(
     .from('research_missions')
     .select('id, label, entry_url, method')
     .eq('mission_date', today)
-    .in('status', ['pending', 'failed'])
+    .in('status', ['pending', 'failed', 'running']) // running = 이전 호출 타임아웃 잔여물도 재수집
     .order('priority', { ascending: false });
 
   const result: CollectionRunResult & { remaining: number } = {
