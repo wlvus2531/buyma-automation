@@ -22,6 +22,33 @@ function getAdminSupabase() {
   );
 }
 
+// GET /api/research/report — 수집 데이터 품질 통계 (V1/V2 검증용)
+export async function GET(req: NextRequest) {
+  if (!authorizeCollector(req)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  const supabase = getAdminSupabase();
+
+  const { count: total } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true });
+  const { count: withDate } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).not('listed_date', 'is', null);
+  const { count: withWish } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).not('wish_count', 'is', null);
+  const { count: withPrice } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).not('price_jpy', 'is', null);
+  const { count: withBrand } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).not('brand', 'is', null);
+  const { count: discardedCnt } = await supabase.from('buyma_candidates').select('id', { count: 'exact', head: true }).eq('status', 'discarded');
+
+  const { data: samples } = await supabase
+    .from('buyma_candidates')
+    .select('buyma_item_id, name_jp, brand, price_jpy, wish_count, listed_date, seller_name, rank_position, image_url')
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  return NextResponse.json({
+    total, with_listed_date: withDate, with_wish_count: withWish,
+    with_price: withPrice, with_brand: withBrand, discarded: discardedCnt,
+    samples,
+  });
+}
+
 interface ReportItem {
   buyma_item_id: string;
   buyma_url?: string;
