@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     );
     const gen = await generateDailyMissions(supabase);
     const collect = await runResearchCollection(supabase, { missionLimit: 6 });
-    const enrich = await runEnrichment(supabase, { limit: 12 });
+    const enrich = await runEnrichment(supabase, { limit: 24 });
     return NextResponse.json({ ok: true, generated: gen.created, ...collect, enrich });
   } catch (e) {
     console.error('[research/run] 오류:', e);

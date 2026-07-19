@@ -101,7 +101,7 @@ export async function runDailyListing(): Promise<ListingRunResult> {
     .not('source_url', 'is', null)
     .not('thumbnail_url', 'is', null)
     .is('listing_status', null)
-    .order('ai_score', { ascending: false })
+    .order('margin_pct', { ascending: false, nullsFirst: false }) // v4: 실측 마진 우선
     .limit(20);
 
   if (error) throw new Error(`products 조회 실패: ${error.message}`);

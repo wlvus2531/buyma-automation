@@ -24,19 +24,35 @@ function stripTags(s: string): string {
   return s.replace(/<[^>]+>/g, '');
 }
 
-/** 일본어 상품명에서 네이버 검색용 쿼리 추출 (브랜드 + 영문 토큰) */
+/**
+ * 일본어 상품명에서 네이버 검색용 쿼리 추출
+ * 우선순위: 품번(모델번호) > 브랜드+영문 토큰 (방법론: 품명/품번 구글링)
+ */
 export function buildSearchQuery(brand: string | null, nameJp: string | null): string | null {
-  const latinTokens = (nameJp ?? '')
-    .replace(/[【】\[\]★☆♪◆■◎「」『』()（）]/g, ' ')
-    .match(/[A-Za-z][A-Za-z0-9&.'-]{1,}/g) ?? [];
+  const cleaned = (nameJp ?? '').replace(/[【】\[\]★☆♪◆■◎「」『』()（）]/g, ' ');
+
+  // 품번 패턴: 영문+숫자 혼합 5자+ (예: CW6902-063, 26TZ109, M4213CRM)
+  const modelNos = (cleaned.match(/\b[A-Z0-9]+[-_]?[A-Z0-9]+\b/gi) ?? [])
+    .filter((t) => t.length >= 5 && /[0-9]/.test(t) && /[A-Za-z]/.test(t));
+
+  const latinTokens = cleaned.match(/[A-Za-z][A-Za-z0-9&.'-]{1,}/g) ?? [];
   const brandNorm = (brand ?? '').toLowerCase();
   const tokens = latinTokens
-    .filter((t) => !brandNorm.includes(t.toLowerCase()) && !/^(the|and|for|with|of)$/i.test(t))
-    .slice(0, 4);
-  const parts = [brand, ...tokens].filter(Boolean);
+    .filter((t) => !brandNorm.includes(t.toLowerCase()) && !/^(the|and|for|with|of)$/i.test(t) && !modelNos.includes(t))
+    .slice(0, 3);
+
+  // 품번이 있으면 "브랜드 + 품번" (가장 정확), 없으면 "브랜드 + 키워드"
+  const parts = modelNos.length > 0
+    ? [brand, modelNos[0]].filter(Boolean)
+    : [brand, ...tokens].filter(Boolean);
   if (parts.length === 0) return null;
   return parts.join(' ').slice(0, 60);
 }
+
+/** 오매칭 감지: 원가(엔환산)/판매가 비율이 정상 범위(15~85%)를 벗어나면 의심 */
+export const COST_RATIO_MIN = 0.15;
+export const COST_RATIO_MAX = 0.85;
+export const MIN_SELL_PRICE_JPY = 3000; // 저가 상품 지양 (셀링 전략)
 
 async function searchNaver(query: string): Promise<NaverItem[]> {
   const clientId = process.env.NAVER_CLIENT_ID;
@@ -100,14 +116,16 @@ export async function runVerification(
   const result: VerifyRunResult = { checked: 0, promoted: 0, rejected_margin: 0, no_source: 0, errors: [] };
 
   // 1. 수요 조건: 90일 이내 등록 + (찜 3+ 또는 조회 100+), enriched 상태
+  //    방법론 필터: 노브랜드 제거 + 저가(¥3,000 미만) 지양
   const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const { data: candidates } = await supabase
     .from('buyma_candidates')
-    .select('id, buyma_item_id, buyma_url, name_jp, brand, price_jpy, wish_count, access_count, listed_date, seller_name, image_url, method')
+    .select('id, buyma_item_id, buyma_url, name_jp, brand, price_jpy, wish_count, access_count, listed_date, seller_name, image_url, method, raw')
     .eq('status', 'enriched')
     .gte('listed_date', cutoff)
     .or('wish_count.gte.3,access_count.gte.100')
-    .not('price_jpy', 'is', null)
+    .not('brand', 'is', null)
+    .gte('price_jpy', MIN_SELL_PRICE_JPY)
     .order('wish_count', { ascending: false, nullsFirst: false })
     .limit(limit);
 
@@ -158,7 +176,20 @@ export async function runVerification(
         krwPerJpy,
       });
 
+      // 오매칭 감지: 원가(엔환산)/판매가 비율이 정상범위 밖 → 동일 상품 아닐 가능성
+      const costRatio = Math.round((margin.cost_jpy / c.price_jpy) * 100) / 100;
+      if (costRatio < COST_RATIO_MIN || costRatio > COST_RATIO_MAX) {
+        await supabase.from('buyma_candidates')
+          .update({ status: 'match_doubt', raw: { ...(c.raw ?? {}), match_doubt: { source_title: best.title, cost_ratio: costRatio } } })
+          .eq('id', c.id);
+        result.no_source++;
+        await sleep(150);
+        continue;
+      }
+
       const evidence = {
+        source_title: best.title,
+        cost_ratio: costRatio,
         wish_count: c.wish_count,
         access_count: c.access_count,
         listed_date: c.listed_date,
@@ -176,7 +207,7 @@ export async function runVerification(
 
       if (!margin.passes) {
         await supabase.from('buyma_candidates')
-          .update({ status: 'rejected_margin', raw: evidence })
+          .update({ status: 'rejected_margin', raw: { ...(c.raw ?? {}), evidence } })
           .eq('id', c.id);
         result.rejected_margin++;
         await sleep(150);
@@ -210,7 +241,7 @@ export async function runVerification(
           .eq('candidate_id', c.id);
       }
 
-      await supabase.from('buyma_candidates').update({ status: 'promoted', raw: evidence }).eq('id', c.id);
+      await supabase.from('buyma_candidates').update({ status: 'promoted', raw: { ...(c.raw ?? {}), evidence } }).eq('id', c.id);
       result.promoted++;
       await sleep(150); // 네이버 rate limit
     } catch (e) {

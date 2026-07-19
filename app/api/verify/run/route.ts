@@ -38,6 +38,22 @@ export async function POST(req: NextRequest) {
   if (!authorizeCollector(req)) return cronUnauthorized();
   const body = await req.json().catch(() => ({}));
 
+  // 레거시(AI 환각 소싱) 미결정 상품 정리 — dry:true면 개수만 반환
+  if (body.action === 'purge_legacy') {
+    const supabase = getAdminSupabase();
+    const { data: legacy } = await supabase
+      .from('products')
+      .select('id')
+      .is('candidate_id', null)
+      .is('decided_at', null)
+      .is('listing_status', null)
+      .eq('status', 'sourcing');
+    const ids = (legacy ?? []).map((r) => r.id);
+    if (body.dry) return NextResponse.json({ ok: true, dry: true, count: ids.length });
+    if (ids.length) await supabase.from('products').delete().in('id', ids);
+    return NextResponse.json({ ok: true, removed: ids.length });
+  }
+
   // 비화이트리스트 구매처로 잘못 승격된 상품 정리 → 후보는 재검증 대상으로 복귀
   if (body.action === 'cleanup_untrusted') {
     const supabase = getAdminSupabase();
