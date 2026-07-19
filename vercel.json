@@ -5,7 +5,7 @@
       "schedule": "30 18 * * *"
     },
     {
-      "path": "/api/sourcing/run",
+      "path": "/api/verify/run",
       "schedule": "0 19 * * *"
     },
     {
