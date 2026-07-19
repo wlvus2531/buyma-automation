@@ -66,6 +66,8 @@ export function rankSources(items: NaverItem[], rules: BrandRule[]): SourceCandi
   for (const it of items) {
     const price = parseInt(it.lprice, 10);
     if (!price || price < 1000) continue;
+    const title = stripTags(it.title);
+    if (/중고|리퍼|반품|전시품|B급|벌크/i.test(title)) continue; // 정품 신품만
     const target = `${it.mallName} ${it.link}`;
     if (!checkSource(target, rules).allowed) continue; // 금지 구매처 제외
     out.push({
@@ -140,8 +142,16 @@ export async function runVerification(
         sources.map((s, i) => ({ candidate_id: c.id, ...s, rank: i }))
       );
 
-      // 2. 마진 계산 — 최우선 구매처 기준
+      // 절대 규칙: 화이트리스트(신뢰 플랫폼) 구매처가 있을 때만 승격
       const best = sources[0];
+      if (!best.is_whitelisted) {
+        await supabase.from('buyma_candidates')
+          .update({ status: 'no_trusted_source' })
+          .eq('id', c.id);
+        result.no_source++;
+        await sleep(150);
+        continue;
+      }
       const margin = calcMargin({
         costKrw: best.price_krw,
         sellPriceJpy: c.price_jpy,

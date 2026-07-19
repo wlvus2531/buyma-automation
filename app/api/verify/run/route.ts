@@ -37,5 +37,23 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   if (!authorizeCollector(req)) return cronUnauthorized();
   const body = await req.json().catch(() => ({}));
+
+  // 비화이트리스트 구매처로 잘못 승격된 상품 정리 → 후보는 재검증 대상으로 복귀
+  if (body.action === 'cleanup_untrusted') {
+    const supabase = getAdminSupabase();
+    const { data: bad } = await supabase
+      .from('products')
+      .select('id, candidate_id')
+      .not('candidate_id', 'is', null)
+      .eq('evidence->>source_whitelisted', 'false');
+    const ids = (bad ?? []).map((r) => r.id);
+    const candIds = (bad ?? []).map((r) => r.candidate_id).filter(Boolean);
+    if (ids.length) {
+      await supabase.from('products').delete().in('id', ids);
+      await supabase.from('buyma_candidates').update({ status: 'enriched' }).in('id', candIds);
+    }
+    return NextResponse.json({ ok: true, removed: ids.length });
+  }
+
   return handle(body.limit ?? 15);
 }
